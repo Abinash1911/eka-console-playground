@@ -57,3 +57,6 @@ Read echo's guide, tools, services, doctor-search design doc, Weaviate retriever
 
 ## 2026-10-28: echo-sdk read
 Cloned `eka-care/echo-sdk` read-only (public repo, not attached). Skills fully understood: prompt-backed (Langfuse), LLM loads them via `load_skill`, tool visibility = base tools + active skills' tools. Weaviate connector confirms ingestion is a separate pipeline and gives the record schema it must write. Next: doot.
+
+## 2026-10-28: full read of the remaining repos
+Read doot, dev-console, matrix (leftovers), eka-remote-mcp, eka-mcp-sdk, synapse-sdk (rest), echo, echo-sdk. Wrote `docs/repos/*`, `docs/how-it-fits.md`, `docs/build-recipes.md`. Corrections: formulary datasets (drugs, labs, symptoms, diagnoses) are EMR partner-search data, not chat tools (earlier note was wrong); doot and scribesnap are the same service; Moolchand's booking returns a payment step from the hospital system. Still unfound: document indexing pipeline, prepaid flag, list-prescriptions.

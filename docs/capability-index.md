@@ -20,7 +20,7 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 |---|---|---|
 | Doctor / facility / service search, city and specialization lists | exists | echo `tools/datasets/` |
 | Dataset KBs (doctor, facility, service) as agent tools | exists | matrix `config/tool.py` (`_DATASET_TOOL_CLASSES`) |
-| Dataset KBs for medication, lab, symptom, diagnosis (console CSV import) | partial | dev-console can store them; matrix drops these types at runtime ("invalid KB type"), so agents cannot search them yet |
+| Formulary datasets: drugs, symptoms, diagnoses, lab tests/investigations/results/panels | exists, not for chat | dev-console `datasets/`: serve doctor-side EMR partner search (with a search switch and an Elasticsearch sync for labs), not agent tools; matrix correctly ignores them |
 | Document KB retrieval (Bedrock, Weaviate) | exists | echo retrievers, matrix `agent_utils.py` |
 | Document KB ingestion (clinic uploads FAQs) | unknown | echo-sdk says a "separate pipeline" indexes the corpus; not found in dev-console, matrix, echo or echo-sdk; console upload UI is stale. Record schema it must write is known (see ecosystem map) |
 | Triage tool (also sends a checkup reminder) | exists | echo `triage_tool.py`; attach as a custom tool [to verify] |
@@ -43,8 +43,8 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 |---|---|---|
 | Payment status by transaction ID | exists | developer.eka.care Payments API |
 | Invoices and payments | partial | IPD (inpatient) billing APIs only |
-| Prepaid vs postpaid read from doctor service | missing (search-level) | no code reads it; test in sandbox |
-| Pay-in-chat (payment link) | missing | needs a gateway; unknown which |
+| Prepaid vs postpaid read from doctor service | not found | no code in any connected repo reads it |
+| Pay-in-chat (payment link) | not found | Moolchand client returns "make payment to confirm" from the hospital system; no link builder or gateway call in any connected repo |
 
 ## Widget (synapse-sdk)
 | Capability | Status | Source |
@@ -69,3 +69,18 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Capability | Status | Source |
 |---|---|---|
 | Doctor prescribing memory (EkaScribe suggestions) | exists | echo `agent_memory/scribe` |
+
+## MCP / platform mechanics
+| Capability | Status | Source |
+|---|---|---|
+| One tool, per-hospital client (Eka EMR, Apollo, RFH, Moolchand, Eternal, Sukino) | exists | eka-mcp-sdk `ClientFactory`, eka-remote-mcp `clients/` |
+| Per-workspace tool allowlist | exists | `workspace_tools_dict`, `DEFAULT_EKAEMR_REMOTE_TOOLS` |
+| In-chat mobile OTP login + UHID pick | exists | each client's `authentication_elicitation` |
+| Custom tools attachable from the console (class path under `echo_agents.tools`) | exists | dev-console `Tool.tool_type=custom`, matrix `load_custom_tool` |
+| Agent create/update through an API | exists | dev-console `/api/agents/` |
+| WhatsApp number management and templates through an API | exists | dev-console `/api/integrations/`, `/api/product-integrations/`, templates |
+| Scheduled HTTP request from a tool (Jugaad) | exists | eka-remote-mcp `scheduled_request.py` |
+| Consent gate on WhatsApp | exists | doot `consent.py` |
+| Resume a chat after a template message | exists | doot `template_session.py` |
+| Voice agent (WebRTC, telephony) | exists | matrix `service/voice/` |
+| Per-agent data region | exists | `agent_details.region`, matrix regions |

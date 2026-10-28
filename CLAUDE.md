@@ -19,6 +19,7 @@ The user is a product manager, not an engineer. Goal: build features in the real
 - Hook warnings about bot commits (github-actions) are not ours; do not amend them.
 
 ## Before building anything
+0. Read `docs/how-it-fits.md` and the repo note in `docs/repos/` for the area; use `docs/build-recipes.md` for where to start.
 1. Check whether it already exists: `docs/capability-index.md`, then the code in dev-console, synapse-sdk, matrix, echo, eka-mcp-sdk, eka-remote-mcp, doot, and developer.eka.care.
 2. Do not call something "missing" after a code search alone. Read the files. State the files read.
 3. Use the repo's own code style. Anything beyond what the repos have is labelled as an addition.
