@@ -22,7 +22,7 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Dataset KBs (doctor, facility, service) as agent tools | exists | matrix `config/tool.py` (`_DATASET_TOOL_CLASSES`) |
 | Dataset KBs for medication, lab, symptom, diagnosis (console CSV import) | partial | dev-console can store them; matrix drops these types at runtime ("invalid KB type"), so agents cannot search them yet |
 | Document KB retrieval (Bedrock, Weaviate) | exists | echo retrievers, matrix `agent_utils.py` |
-| Document KB ingestion (clinic uploads FAQs) | unknown | not found in dev-console, matrix or echo; console upload UI is stale |
+| Document KB ingestion (clinic uploads FAQs) | unknown | echo-sdk says a "separate pipeline" indexes the corpus; not found in dev-console, matrix, echo or echo-sdk; console upload UI is stale. Record schema it must write is known (see ecosystem map) |
 | Triage tool (also sends a checkup reminder) | exists | echo `triage_tool.py`; attach as a custom tool [to verify] |
 | Patient vitals retriever | exists in echo, not wired by default | echo `patient_vitals_retriever.py`; matrix only auto-adds `elicit_selection`; needs a custom-tool row [to verify] |
 | Multi-step card/pills flows with callbacks (template for booking or payment cards) | exists | echo `pharmacy_tool.py`, `selection_tool.py` |
@@ -52,7 +52,7 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Floating, full page, side panel modes | exists | main |
 | Centered mode (search bar + dialog) | built, not pushed | `centered-widget.zip` |
 | Configurable floating size | PR open | synapse-sdk PR 214 |
-| Skills (prompt packs with tool/KB deps) | exists | dev-console `Skill`, matrix `skills_runtime` |
+| Skills (LLM-activated prompt packs; instructions live in Langfuse; tools hidden until loaded) | exists | echo-sdk `skills/`, dev-console `Skill`, matrix `agent_service.py` |
 
 ## Platform (matrix)
 | Capability | Status | Source |

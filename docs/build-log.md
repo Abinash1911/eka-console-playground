@@ -54,3 +54,6 @@ Read matrix routes, auth contract, session/WebSocket flow doc, agent run, config
 
 ## 2026-10-28: echo read
 Read echo's guide, tools, services, doctor-search design doc, Weaviate retriever, triage, vitals, pharmacy flow, agent_memory README. Framework repo `echo-sdk` is not connected (skills runtime, prompt provider, tool contract live there). Findings: vitals and triage tools exist in echo but matrix only auto-attaches `elicit_selection`; Jugaad scheduler is generic; the pharmacy tool is a working template for multi-step card flows (could be a pattern for booking/payment cards). Open: Doot vs Scribesnap naming for WhatsApp relay. Next: doot.
+
+## 2026-10-28: echo-sdk read
+Cloned `eka-care/echo-sdk` read-only (public repo, not attached). Skills fully understood: prompt-backed (Langfuse), LLM loads them via `load_skill`, tool visibility = base tools + active skills' tools. Weaviate connector confirms ingestion is a separate pipeline and gives the record schema it must write. Next: doot.

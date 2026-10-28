@@ -66,7 +66,7 @@ Visitor's browser
 
 ## echo (read; repo name `echo`, package `echo_agents`, v0.3.10)
 
-**What it is.** Eka-specific agents and tools built on a separate framework repo, **`echo-sdk`** (package `echo`: `BaseAgent`, `GenericAgent`, the agent loop, `BaseTool`, LLM providers, skills runtime, prompt provider, MCP client). `echo-sdk` is **not connected to this session**, so framework behaviour (how skills activate, how prompts load, the tool contract) is only known from how matrix and echo call it. Echo's own README is stale (it still describes the SDK).
+**What it is.** Eka-specific agents and tools built on the framework repo **`echo-sdk`** (package `echo`, see its section below). Echo's own README is stale (it still describes the SDK).
 
 **What matrix uses from it.** `GenericAgent` and prompts/skills (from `echo`); `echo_agents.tools.datasets` (doctor, facility, service search + details + specialization/city lists), `echo_agents.tools.elicitation.SelectionElicitationTool` (pills / multi-select), `weaviate_kb_retriever` and `bedrock_kb_retriever`, `echo_agents.utils.pg_wrapper`, `echo_agents.services.user_context_service`.
 
@@ -96,20 +96,37 @@ Visitor's browser
 - Doctor search quality depends on data hygiene (`aliases` = name variants only, `keywords` = synonyms and conditions, canonical `specialization`).
 - Known open issue: the LLM sometimes reorders search results; fix is in glue code.
 
+## echo-sdk (read; package `echo`, public repo, read-only clone)
+
+**What it is.** The framework under echo and matrix: multi-provider LLM layer (Bedrock, OpenAI, Anthropic, Gemini), `BaseAgent` / `GenericAgent`, tools, skills, prompts, knowledge connectors, Postgres tool base, audio transcription, evals. Rules: orjson, async-first, optional deps guarded, Pydantic v2, conversation context immutable, never commit without explicit confirmation.
+
+**How skills work.**
+- A skill is `name + description + instructions + tool_names`. `instructions` is the `task.description` of a prompt fetched from the prompt provider (Langfuse by default; a file provider exists), so a skill's text lives in Langfuse, not in the database.
+- In `llm` mode the agent's system prompt lists `<available_skills>` (name and description only). The model calls `load_skill(name)`; the agent then recomputes its prompt and tools and continues in the same turn (`ControlFlow.INTERRUPT`). `unload_skill` reverses it.
+- Visible tools each turn = `base_tool_names` + tools of active skills + the two meta tools. A tool that is not in `base_tool_names` is hidden until a skill that lists it is loaded. This is how a console tool marked "not default visible" works.
+- Matrix restores previously activated skills each turn from the last-message context.
+- Consequence: the 20 to 50 word skill description is what makes the model load it, so its wording matters most.
+
+**Control flow of a tool result.** `CONTINUE` (feed back to the model), `INTERRUPT` (state changed, recompute and re-invoke), `PAUSE` (stop and ask the user: elicitation).
+
+**Prompts.** `AgentPrompt` = persona + task (cached prefix) + volatile `context` (user, session, time; sent after the cache breakpoint) + timezone. `PromptConfig` = provider, name, variables, version.
+
+**Knowledge.** `WeaviateKnowledgeBase` is read-only hybrid search (default `alpha` 0.8) over a multi-tenant collection. Its docstring says the corpus "is indexed by a separate pipeline; nothing here writes". The record schema that pipeline must produce: `text`, `kb_id`, `source_uri`, `filename`, `doc_title`, `category`, `subcategory`, `source_org`, `heading_path`, `page_start`, `page_end` (filterable: `kb_id`, `category`, `subcategory`, `source_org`, `filename`, `doc_title`, pages). The pipeline itself is still unlocated.
+
 ## Other repos (draft)
 
 | Repo | Owns | Read so far |
 |---|---|---|
 | synapse-sdk | Widget UI, embed loader, channel header | Display modes, size, centered mode, nudges |
-| echo | Agent library: dataset search tools, Bedrock/Weaviate retrievers, reminder scheduler, triage, vitals, elicitation | Read (see section above); `echo-sdk` not connected |
+| echo | Agent library: dataset search tools, Bedrock/Weaviate retrievers, reminder scheduler, triage, vitals, elicitation | Read (see section above) |
+| echo-sdk | Framework: agent loop, skills, prompts, LLM providers, knowledge connectors | Read (see section above); public, read-only clone |
 | eka-mcp-sdk | MCP tools over Eka EMR APIs | Tool list, booking, prescriptions, records |
 | eka-remote-mcp | Hosted MCP server, OAuth, Apollo/Sukino tools | README, tool names |
 | dev-console | Django console: agents, skills, tools, knowledge, datasets, widget tab | Knowledge bases, skills model, widget tab |
 | doot | WhatsApp bridge | Scheduler spec, tests (search-level) |
 
 ## Next reads (in order)
-1. echo-sdk (not connected): skills runtime, prompt provider, tool contract. Ask to connect.
-2. doot: WhatsApp flow end to end.
+1. doot: WhatsApp flow end to end.
 3. dev-console: nudges, campaigns, integrations.
 4. matrix leftovers: `tool_callback`, `http_stream`, voice pipeline, BYOA, user context, `conversation_summary`.
 5. developer.eka.care: full API index.
