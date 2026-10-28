@@ -51,3 +51,6 @@ Teleconsult booking, prescription explainer, vitals tracking, default skills (bo
 
 ## 2026-10-28: matrix read
 Read matrix routes, auth contract, session/WebSocket flow doc, agent run, config loading, KB loading, nudge service. Written into `docs/ecosystem-map.md`. Biggest finding: matrix only turns doctor/facility/service dataset KBs into tools; medication/lab/symptom/diagnosis datasets stored in the console are dropped at runtime. Next: echo.
+
+## 2026-10-28: echo read
+Read echo's guide, tools, services, doctor-search design doc, Weaviate retriever, triage, vitals, pharmacy flow, agent_memory README. Framework repo `echo-sdk` is not connected (skills runtime, prompt provider, tool contract live there). Findings: vitals and triage tools exist in echo but matrix only auto-attaches `elicit_selection`; Jugaad scheduler is generic; the pharmacy tool is a working template for multi-step card flows (could be a pattern for booking/payment cards). Open: Doot vs Scribesnap naming for WhatsApp relay. Next: doot.

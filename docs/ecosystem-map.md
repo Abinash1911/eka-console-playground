@@ -64,19 +64,51 @@ Visitor's browser
 - The same doc lists known issues (token expiry not breaking the loop; a possible token-randomness bug).
 - Matrix imports echo (`echo`, `echo_agents`) for all agent behaviour.
 
+## echo (read; repo name `echo`, package `echo_agents`, v0.3.10)
+
+**What it is.** Eka-specific agents and tools built on a separate framework repo, **`echo-sdk`** (package `echo`: `BaseAgent`, `GenericAgent`, the agent loop, `BaseTool`, LLM providers, skills runtime, prompt provider, MCP client). `echo-sdk` is **not connected to this session**, so framework behaviour (how skills activate, how prompts load, the tool contract) is only known from how matrix and echo call it. Echo's own README is stale (it still describes the SDK).
+
+**What matrix uses from it.** `GenericAgent` and prompts/skills (from `echo`); `echo_agents.tools.datasets` (doctor, facility, service search + details + specialization/city lists), `echo_agents.tools.elicitation.SelectionElicitationTool` (pills / multi-select), `weaviate_kb_retriever` and `bedrock_kb_retriever`, `echo_agents.utils.pg_wrapper`, `echo_agents.services.user_context_service`.
+
+**Tools in echo (names the LLM sees).**
+| Tool | What it does |
+|---|---|
+| `search_doctors`, `search_facilities`, `search_services` | Postgres full-text + trigram search over the workspace's dataset, scoped by workspace and KB id; campaign boosts; lean rows |
+| `search_result_details` | Full row for one doctor / facility / service id |
+| specialization list, city list | Not called by the LLM; matrix injects their values into the prompt so arguments use real values |
+| `retrieve_clinical_guidelines` (Weaviate), `retrieve_knowledge` (Bedrock) | Document KB retrieval; Weaviate gated on cosine similarity (default 0.45), says "nothing relevant" instead of guessing |
+| `elicit_selection` | Pills (single) or multi-select question |
+| `nearest_pharmacy_elicit` | Customer-specific (South African pharmacies, voucher issued through a third-party API, then books a placeholder appointment in the EMR). A working example of a multi-step card flow |
+| `selfcare_triage` | Maps severity, urgency and pathway to red/orange/green; also sends a WhatsApp checkup reminder (not on the WhatsApp channel) |
+| `retrieve_patient_vitals` | Reads vitals from the DeviceIngestion service (`di.orbi.orbi`) for a user id |
+| Intent classifier agent, sub-intent retriever | Classification with a small Chroma vector store |
+
+**Messaging.** `notification_service` builds the WhatsApp template message and calls matrix `send-template`; `reminder_scheduler` registers a delayed replay with **Jugaad** (`jugaad.eka.care/reminder/schedule/`). Only the checkup reminder uses it today, but the scheduler is generic (any endpoint, body, trigger times). Matrix's docstring says send-template relays to **Doot**; echo's docstring says **Scribesnap**. [to verify: same service?]
+
+**User context.** `matrix_user_context` table in Postgres (mobile, name, age, gender, dob, workspace, authenticated flag).
+
+**Other.** `agent_memory/scribe` is unrelated to chat: it learns each doctor's prescribing habits for EkaScribe (event log, counts, suggestions, no LLM). `heuristics/` is a zero-token keyword classifier.
+
+**How tools get attached to an agent (matrix side).** Matrix always adds `elicit_selection`. A "custom" tool row in the console names a class path under `echo_agents.tools`; matrix imports and instantiates it. [to verify in dev-console: which custom tools are offered in the UI]
+
+**Things to know.**
+- Echo's rules: orjson not json, async first, pydantic v2, never commit without explicit confirmation, behaviour lives in YAML prompts.
+- Doctor search quality depends on data hygiene (`aliases` = name variants only, `keywords` = synonyms and conditions, canonical `specialization`).
+- Known open issue: the LLM sometimes reorders search results; fix is in glue code.
+
 ## Other repos (draft)
 
 | Repo | Owns | Read so far |
 |---|---|---|
 | synapse-sdk | Widget UI, embed loader, channel header | Display modes, size, centered mode, nudges |
-| echo | Agent library: dataset search tools, Bedrock/Weaviate retrievers, reminder scheduler, triage | Tool lists, KB skill (search-level) |
+| echo | Agent library: dataset search tools, Bedrock/Weaviate retrievers, reminder scheduler, triage, vitals, elicitation | Read (see section above); `echo-sdk` not connected |
 | eka-mcp-sdk | MCP tools over Eka EMR APIs | Tool list, booking, prescriptions, records |
 | eka-remote-mcp | Hosted MCP server, OAuth, Apollo/Sukino tools | README, tool names |
 | dev-console | Django console: agents, skills, tools, knowledge, datasets, widget tab | Knowledge bases, skills model, widget tab |
 | doot | WhatsApp bridge | Scheduler spec, tests (search-level) |
 
 ## Next reads (in order)
-1. echo: dataset tools, elicitation, user context, prompts.
+1. echo-sdk (not connected): skills runtime, prompt provider, tool contract. Ask to connect.
 2. doot: WhatsApp flow end to end.
 3. dev-console: nudges, campaigns, integrations.
 4. matrix leftovers: `tool_callback`, `http_stream`, voice pipeline, BYOA, user context, `conversation_summary`.

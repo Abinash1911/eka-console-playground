@@ -23,13 +23,14 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Dataset KBs for medication, lab, symptom, diagnosis (console CSV import) | partial | dev-console can store them; matrix drops these types at runtime ("invalid KB type"), so agents cannot search them yet |
 | Document KB retrieval (Bedrock, Weaviate) | exists | echo retrievers, matrix `agent_utils.py` |
 | Document KB ingestion (clinic uploads FAQs) | unknown | not found in dev-console, matrix or echo; console upload UI is stale |
-| Triage tool | exists | echo `triage_tool.py` |
-| Vitals retriever | exists | echo |
+| Triage tool (also sends a checkup reminder) | exists | echo `triage_tool.py`; attach as a custom tool [to verify] |
+| Patient vitals retriever | exists in echo, not wired by default | echo `patient_vitals_retriever.py`; matrix only auto-adds `elicit_selection`; needs a custom-tool row [to verify] |
+| Multi-step card/pills flows with callbacks (template for booking or payment cards) | exists | echo `pharmacy_tool.py`, `selection_tool.py` |
 
 ## Messaging
 | Capability | Status | Source |
 |---|---|---|
-| Reminder scheduler (WhatsApp templates via jugaad) | partial | echo; used for checkup reminders only |
+| Delayed callbacks via Jugaad (generic scheduler) | exists | echo `reminder_scheduler.py`; only the checkup reminder uses it today |
 | Appointment / follow-up / vaccination reminder webhooks | exists | developer.eka.care |
 | Nudges: manual per-page rules (wildcards) | exists | matrix `nudge_utils.py` (`source = manual`) |
 | Nudges: LLM-generated from page meta tags (Haiku 4.5), cached | exists | matrix `nudge_service.py` (`nudge_type = llm`) |
@@ -63,3 +64,8 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Campaigns (override opening message / prompt by `campaign_id`) | exists | matrix `campaign_utils.py` |
 | Elicitation (pills, cards) except on voice / WhatsApp | exists | matrix `ELICITATION_UNSUPPORTED_CHANNELS` |
 | Per-region data storage | exists | matrix `common/storage` |
+
+## Not chat (echo)
+| Capability | Status | Source |
+|---|---|---|
+| Doctor prescribing memory (EkaScribe suggestions) | exists | echo `agent_memory/scribe` |
