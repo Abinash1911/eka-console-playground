@@ -1,0 +1,46 @@
+# repo<TAB>path prefix<TAB>what in the notes it affects
+eka-care/dev-console	agents/models.py	dev-console.md "What an agent is", how-it-fits.md section 8
+eka-care/dev-console	agents/api_views.py	dev-console.md "Ways in" (agent write API)
+eka-care/dev-console	agents/schemas/	dev-console.md "Ways in"
+eka-care/dev-console	agents/internal_	dev-console.md "Ways in" (internal endpoints), doot.md
+eka-care/dev-console	agents/views/	dev-console.md (console UI behaviour)
+eka-care/dev-console	integration/	dev-console.md "Ways in" (integration API), doot.md inbound/outbound
+eka-care/dev-console	datasets/	dev-console.md "Datasets", capability-index.md
+eka-care/dev-console	console_index/	dev-console.md "Conversations dashboard"
+eka-care/dev-console	conversations/	dev-console.md "Conversations dashboard"
+eka-care/dev-console	services/	dev-console.md "Prompts" and other services
+eka-care/dev-console	core/db_routers.py	dev-console.md "Databases"
+eka-care/dev-console	templates/agents/detail.html	synapse-sdk.md (widget snippet), dev-console.md
+eka-care/matrix	med_assist/router/	matrix.md endpoints, how-it-fits.md flows
+eka-care/matrix	med_assist/service/agents/	matrix.md "One chat turn"
+eka-care/matrix	med_assist/utils/agent_config_utils.py	matrix.md "Config loading", how-it-fits.md section 8
+eka-care/matrix	med_assist/config/tool.py	matrix.md knowledge bases, capability-index.md
+eka-care/matrix	med_assist/service/auth/	matrix.md "Auth"
+eka-care/matrix	med_assist/service/nudge	matrix.md "Other endpoints" (nudges)
+eka-care/matrix	med_assist/service/voice/	matrix.md (voice)
+eka-care/matrix	AUTH_CLIENT_CONTRACT.md	matrix.md "Auth"
+eka-care/echo	src/echo_agents/tools/	echo-and-echo-sdk.md tools, capability-index.md
+eka-care/echo	src/echo_agents/services/	echo-and-echo-sdk.md messaging, user context
+eka-care/echo	.claude/docs/	echo-and-echo-sdk.md search rules
+eka-care/echo-sdk	src/echo/skills/	echo-and-echo-sdk.md skills, build-recipes.md
+eka-care/echo-sdk	src/echo/agents/	echo-and-echo-sdk.md agent loop
+eka-care/echo-sdk	src/echo/tools/	echo-and-echo-sdk.md tools contract
+eka-care/echo-sdk	src/echo/prompts/	echo-and-echo-sdk.md prompts
+eka-care/echo-sdk	src/echo/knowledge/	echo-and-echo-sdk.md knowledge
+eka-care/echo-sdk	src/echo/llm/	echo-and-echo-sdk.md LLM config
+eka-care/doot	app/bridge/	doot.md bridge flow, how-it-fits.md section 3
+eka-care/doot	app/api/	doot.md inbound
+eka-care/doot	src/	doot.md integration API, outbound
+eka-care/doot	app/services/whatsapp/	doot.md providers, templates
+eka-care/doot	app/config/	doot.md templates, numbers
+eka-care/eka-remote-mcp	eka_remote_mcp/clients/	mcp-layer.md clients
+eka-care/eka-remote-mcp	eka_remote_mcp/tools/	mcp-layer.md tool catalogue, capability-index.md
+eka-care/eka-remote-mcp	eka_remote_mcp/server.py	mcp-layer.md allowlist, platform
+eka-care/eka-remote-mcp	eka_remote_mcp/utils/tools_utils.py	mcp-layer.md allowlist
+eka-care/eka-mcp-sdk	eka_mcp_sdk/tools/	mcp-layer.md tool catalogue, capability-index.md
+eka-care/eka-mcp-sdk	eka_mcp_sdk/clients/	mcp-layer.md clients, BaseEMRClient
+eka-care/eka-mcp-sdk	eka_mcp_sdk/config/	mcp-layer.md workspace settings
+eka-care/synapse-sdk	packages/core/	synapse-sdk.md core, elicitation
+eka-care/synapse-sdk	packages/widget/src/	synapse-sdk.md layers, modes
+eka-care/synapse-sdk	packages/widget-embed/	synapse-sdk.md embed attributes
+eka-care/synapse-sdk	packages/widget/CLAUDE.md	synapse-sdk.md rules

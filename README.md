@@ -9,3 +9,4 @@ Harness for AI-assisted work on the Eka console and chat widget.
 - `docs/how-it-fits.md`: end-to-end flows across the repos
 - `docs/repos/`: one note per system (how it works, where to change what)
 - `docs/build-recipes.md`: where to start for common builds
+- `docs/repo-versions.tsv`, `docs/repo-areas.tsv`, `scripts/check-freshness.sh`, `.claude/skills/refresh-map/`: keep the notes in step with the repos

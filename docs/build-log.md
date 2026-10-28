@@ -64,3 +64,6 @@ Read doot, dev-console, matrix (leftovers), eka-remote-mcp, eka-mcp-sdk, synapse
 
 ## Process change after a wrong claim
 The "matrix drops medication/lab datasets" gap was stated after reading only the consumer. Added rules 2a to 2d to `CLAUDE.md` (two-ended check, confidence labels, re-check on each read, claims-to-confirm list) and created `docs/claims-to-confirm.md`.
+
+## 2026-10-28: freshness system
+Added `docs/repo-versions.tsv` (commit each note was read at), `docs/repo-areas.tsv` (path to note-section map), `scripts/check-freshness.sh` (FRESH/STALE per repo, changed files grouped by affected note, `--bump`), `.claude/skills/refresh-map/SKILL.md`, and rule 2e in `CLAUDE.md`. Tested: all 8 repos fresh; an old commit shows STALE with mapped files; unreachable commit reports STALE; release-only changes are treated as fresh.

@@ -1,0 +1,10 @@
+# repo<TAB>commit the notes were last read at<TAB>note file
+# Updated by the refresh skill (scripts/check-freshness.sh --bump <repo>). Do not edit by hand unless you re-read the repo.
+eka-care/dev-console	ae25fd6ae005f79405be29c9aa55e3d0a710c008	docs/repos/dev-console.md
+eka-care/matrix	6f56888504ad747a2328075c8cf1d6db7f271c75	docs/repos/matrix.md
+eka-care/echo	676ddb811578e6a9449181aa8bc2c43407493f05	docs/repos/echo-and-echo-sdk.md
+eka-care/echo-sdk	78c1048792c29c73b5986ab3009249e916d316b7	docs/repos/echo-and-echo-sdk.md
+eka-care/doot	36e7eeb92c9055f4f2535358075fea3d543ddce4	docs/repos/doot.md
+eka-care/eka-remote-mcp	012545e11a47648b39091ede78f36e03be00e8b8	docs/repos/mcp-layer.md
+eka-care/eka-mcp-sdk	02a73970b0ad9698a9c5a9ebeb0e5a028ce146ca	docs/repos/mcp-layer.md
+eka-care/synapse-sdk	d3c82682d15c47dfc6480c85713d8e60698d37ac	docs/repos/synapse-sdk.md
