@@ -60,3 +60,7 @@ Cloned `eka-care/echo-sdk` read-only (public repo, not attached). Skills fully u
 
 ## 2026-10-28: full read of the remaining repos
 Read doot, dev-console, matrix (leftovers), eka-remote-mcp, eka-mcp-sdk, synapse-sdk (rest), echo, echo-sdk. Wrote `docs/repos/*`, `docs/how-it-fits.md`, `docs/build-recipes.md`. Corrections: formulary datasets (drugs, labs, symptoms, diagnoses) are EMR partner-search data, not chat tools (earlier note was wrong); doot and scribesnap are the same service; Moolchand's booking returns a payment step from the hospital system. Still unfound: document indexing pipeline, prepaid flag, list-prescriptions.
+
+
+## Process change after a wrong claim
+The "matrix drops medication/lab datasets" gap was stated after reading only the consumer. Added rules 2a to 2d to `CLAUDE.md` (two-ended check, confidence labels, re-check on each read, claims-to-confirm list) and created `docs/claims-to-confirm.md`.

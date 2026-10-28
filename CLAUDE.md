@@ -22,6 +22,10 @@ The user is a product manager, not an engineer. Goal: build features in the real
 0. Read `docs/how-it-fits.md` and the repo note in `docs/repos/` for the area; use `docs/build-recipes.md` for where to start.
 1. Check whether it already exists: `docs/capability-index.md`, then the code in dev-console, synapse-sdk, matrix, echo, eka-mcp-sdk, eka-remote-mcp, doot, and developer.eka.care.
 2. Do not call something "missing" after a code search alone. Read the files. State the files read.
+2a. **Two-ended check.** A gap is real only after reading both ends: the code that produces the thing and the code that consumes it, plus what it is for. One-sided reads are labelled **inference**, never stated as fact.
+2b. **Confidence label on every finding:** **verified** (both ends read), **partial** (one end, or search only), **inference** (reasoned, not read). Put the label in `docs/` notes and in answers.
+2c. **Re-check on every new read.** After reading a repo, list earlier claims that touch it and re-test them. Write corrections in `docs/build-log.md` ("Corrections") so they are visible.
+2d. Anything that would change a build decision goes to `docs/claims-to-confirm.md` for a developer to confirm before we build on it.
 3. Use the repo's own code style. Anything beyond what the repos have is labelled as an addition.
 4. Reuse a spec's naming exactly when one is given; list any deviation.
 
