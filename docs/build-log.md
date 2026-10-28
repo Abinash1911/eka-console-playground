@@ -48,3 +48,6 @@ Teleconsult booking, prescription explainer, vitals tracking, default skills (bo
 3. Browser check skill for widget visuals (Playwright harness for the bar, nudge, glow).
 4. Watch PR #214 for CI and review comments (PR subscription).
 5. Weekly loop: check open patches/branches against upstream `main` drift.
+
+## 2026-10-28: matrix read
+Read matrix routes, auth contract, session/WebSocket flow doc, agent run, config loading, KB loading, nudge service. Written into `docs/ecosystem-map.md`. Biggest finding: matrix only turns doctor/facility/service dataset KBs into tools; medication/lab/symptom/diagnosis datasets stored in the console are dropped at runtime. Next: echo.

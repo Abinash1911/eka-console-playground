@@ -19,7 +19,8 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Capability | Status | Source |
 |---|---|---|
 | Doctor / facility / service search, city and specialization lists | exists | echo `tools/datasets/` |
-| Dataset KBs (doctor, facility, service, medication, lab) with CSV import | exists | dev-console `datasets/` |
+| Dataset KBs (doctor, facility, service) as agent tools | exists | matrix `config/tool.py` (`_DATASET_TOOL_CLASSES`) |
+| Dataset KBs for medication, lab, symptom, diagnosis (console CSV import) | partial | dev-console can store them; matrix drops these types at runtime ("invalid KB type"), so agents cannot search them yet |
 | Document KB retrieval (Bedrock, Weaviate) | exists | echo retrievers, matrix `agent_utils.py` |
 | Document KB ingestion (clinic uploads FAQs) | unknown | not found in dev-console, matrix or echo; console upload UI is stale |
 | Triage tool | exists | echo `triage_tool.py` |
@@ -30,7 +31,10 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 |---|---|---|
 | Reminder scheduler (WhatsApp templates via jugaad) | partial | echo; used for checkup reminders only |
 | Appointment / follow-up / vaccination reminder webhooks | exists | developer.eka.care |
-| Nudges (per page text, delay, expiry) | exists | synapse-sdk embed + matrix endpoint |
+| Nudges: manual per-page rules (wildcards) | exists | matrix `nudge_utils.py` (`source = manual`) |
+| Nudges: LLM-generated from page meta tags (Haiku 4.5), cached | exists | matrix `nudge_service.py` (`nudge_type = llm`) |
+| Nudge popup / centered-bar text | exists | synapse-sdk embed |
+| Send a WhatsApp template (relay to doot) | exists | matrix `POST notifications` |
 | Human handoff | missing (search-level) | none found |
 
 ## Money
@@ -48,3 +52,14 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 | Centered mode (search bar + dialog) | built, not pushed | `centered-widget.zip` |
 | Configurable floating size | PR open | synapse-sdk PR 214 |
 | Skills (prompt packs with tool/KB deps) | exists | dev-console `Skill`, matrix `skills_runtime` |
+
+## Platform (matrix)
+| Capability | Status | Source |
+|---|---|---|
+| Guest and logged-in sessions, partner (BYOA) login, token refresh | exists | matrix auth, `AUTH_CLIENT_CONTRACT.md` |
+| History recovery for logged-in users | exists | matrix `GET session?messages=true` |
+| Voice (WebRTC, telephony), ElevenLabs STT/TTS | exists | matrix `voice`, `voice_ws` |
+| Run a named prompt on a category LLM | exists | matrix `run-prompt` |
+| Campaigns (override opening message / prompt by `campaign_id`) | exists | matrix `campaign_utils.py` |
+| Elicitation (pills, cards) except on voice / WhatsApp | exists | matrix `ELICITATION_UNSUPPORTED_CHANNELS` |
+| Per-region data storage | exists | matrix `common/storage` |
