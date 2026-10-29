@@ -1,0 +1,316 @@
+{% extends 'base.html' %}
+
+{% block page_title %}{{ integration.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_list' %}" class="hover:text-gray-700">Integrations</a></li>
+<li class="text-gray-500">/</li>
+<li class="text-gray-900">{{ integration.name }}</li>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="mb-5 flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <i data-lucide="alert-circle" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+    <span>{{ error }}</span>
+</div>
+{% endif %}
+
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-6 items-start">
+
+    <!-- Left: the account -->
+    <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100">
+        <div class="flex items-start justify-between gap-3 p-6 pb-5">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0
+                    {% if integration.provider == 'interakt' %}bg-gradient-to-br from-green-400 to-emerald-600
+                    {% elif integration.provider == 'interakt_tp' %}bg-gradient-to-br from-[#1877F2] to-indigo-700
+                    {% elif integration.provider == 'turn_io' %}bg-gradient-to-br from-blue-400 to-indigo-600
+                    {% else %}bg-gradient-to-br from-gray-400 to-gray-600{% endif %}">
+                    <i data-lucide="plug" class="w-5 h-5 text-white"></i>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-semibold text-gray-900 truncate">{{ integration.name }}</h2>
+                    <p class="text-sm text-gray-500">{{ integration.get_provider_display }}</p>
+                </div>
+            </div>
+            <form method="POST" action="{% url 'agents:integration_delete' integration.pk %}">
+                {% csrf_token %}
+                <button type="submit"
+                        onclick="return confirm('Delete this integration? Anything using it will stop working.')"
+                        class="cursor-pointer inline-flex items-center justify-center w-8 h-8 text-gray-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors"
+                        title="Delete integration">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+
+        <form method="POST" action="{% url 'agents:integration_update' integration.pk %}"
+              class="px-6 pb-6 flex flex-col gap-2 border-b border-gray-100">
+            {% csrf_token %}
+            <label for="name" class="text-xs font-medium uppercase tracking-wide text-gray-500">Name</label>
+            <div class="flex gap-2">
+                <input id="name" name="name" value="{{ integration.name }}" required
+                       class="flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-lg
+                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                <button type="submit"
+                        class="cursor-pointer px-3 py-2 text-sm font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                    Save
+                </button>
+            </div>
+        </form>
+
+        <div class="px-6 py-5">
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-500 mb-3">Credentials</p>
+            {% if credential_rows %}
+            <dl class="flex flex-col gap-2.5">
+                {% for label, value in credential_rows %}
+                <div class="flex items-baseline justify-between gap-3">
+                    <dt class="text-sm text-gray-500 flex-shrink-0">{{ label }}</dt>
+                    <dd class="text-sm text-gray-900 font-mono truncate text-right" title="{{ value }}">{{ value }}</dd>
+                </div>
+                {% endfor %}
+            </dl>
+            {% else %}
+            <p class="text-sm text-gray-400">This provider stores no readable details.</p>
+            {% endif %}
+            <p class="mt-4 flex items-start gap-1.5 text-xs text-gray-400">
+                <i data-lucide="lock" class="w-3.5 h-3.5 mt-px flex-shrink-0"></i>
+                Tokens and keys are encrypted and never shown.
+            </p>
+        </div>
+
+        {% if webhook_manual %}
+        <div class="px-6 pb-6">
+            <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-1.5"
+                 x-data="{ copied: false }">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Webhook URL</p>
+                    <button type="button"
+                            @click="navigator.clipboard.writeText($refs.hook.textContent.trim());
+                                    copied = true; setTimeout(() => copied = false, 1500)"
+                            class="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+                        <span x-show="!copied">Copy</span>
+                        <span x-show="copied" x-cloak>Copied</span>
+                    </button>
+                </div>
+                <code x-ref="hook" class="text-xs font-mono text-gray-900 break-all">{{ webhook_url }}</code>
+                <p class="text-xs text-gray-400">
+                    {% if integration.provider == 'interakt' %}
+                    Paste into Interakt → Developer Settings → Webhooks and tick <b>Message received</b>
+                    (Advanced plan). Interakt switches the webhook off after 5 failures in 10 minutes.
+                    {% elif integration.provider == 'turn_io' %}
+                    Paste into Turn → Settings → API &amp; Webhooks, with the <code>whatsapp</code> subscription.
+                    {% elif integration.provider == 'netcore' %}
+                    Paste into Netcore → Settings → Incoming Webhook URL. It applies to the whole Netcore account.
+                    {% elif integration.provider == 'vobiz' %}
+                    Set as the <b>Answer URL</b> (method POST) of the Vobiz application this number is attached to.
+                    {% else %}
+                    Paste into your provider's webhook settings so messages reach this number's product.
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if integration.provider == 'interakt_tp' %}
+        {% include 'integrations/_template_create.html' %}
+        {% endif %}
+    </div>
+
+    <!-- Right: the bound product -->
+    <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col gap-5"
+         x-data="{ confirmDisconnect: false }">
+
+        <!-- Outside the form below: forms can't nest. -->
+        <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+                {% if binding %}
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Connected to</p>
+                <h3 class="mt-1 text-base font-semibold text-gray-900 flex items-center gap-2">
+                    <i data-lucide="{% if binding.product == 'agent' %}bot{% else %}messages-square{% endif %}"
+                       class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                    {{ binding.get_product_display }}
+                    <span class="text-sm font-normal text-gray-500 truncate">
+                        {% if bound_agent %}· {{ bound_agent.name }}
+                        {% else %}· <span class="font-mono">{{ binding.product_id }}</span>{% endif %}
+                    </span>
+                    {% if not binding.is_active %}
+                    <span class="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[11px] font-medium text-amber-700">
+                        Paused
+                    </span>
+                    {% endif %}
+                </h3>
+                {% else %}
+                <h3 class="text-base font-semibold text-gray-900">Connect a product</h3>
+                <p class="mt-1 text-sm text-gray-500">Choose what this number is used for.</p>
+                {% endif %}
+            </div>
+            {% if binding %}
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <form method="POST" action="{% url 'agents:integration_toggle_product' integration.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="state" value="{% if binding.is_active %}disable{% else %}enable{% endif %}">
+                    <button type="submit"
+                            class="cursor-pointer px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                        {% if binding.is_active %}Pause{% else %}Resume{% endif %}
+                    </button>
+                </form>
+                <button type="button" @click="confirmDisconnect = true"
+                        class="cursor-pointer px-3 py-1.5 text-sm font-medium text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition-colors">
+                    Disconnect
+                </button>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if binding %}
+        <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-1.5"
+             x-data="{ copied: false }">
+            <div class="flex items-center justify-between gap-3">
+                <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Binding ID</p>
+                <button type="button"
+                        @click="navigator.clipboard.writeText($refs.bid.textContent.trim());
+                                copied = true; setTimeout(() => copied = false, 1500)"
+                        class="text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors">
+                    <span x-show="!copied">Copy</span>
+                    <span x-show="copied" x-cloak>Copied</span>
+                </button>
+            </div>
+            <code x-ref="bid" class="text-xs font-mono text-gray-900 break-all">{{ binding.uuid }}</code>
+            <p class="text-xs text-gray-400">
+                Services send through this number by quoting this ID. Pausing keeps it;
+                disconnecting destroys it and anything using it stops.
+            </p>
+        </div>
+        {% endif %}
+
+        <form method="POST" action="{% url 'agents:integration_bind_product' integration.pk %}"
+              x-data="{ product: '{{ binding.product }}' }" class="flex flex-col gap-5">
+            {% csrf_token %}
+
+            <!-- Locked once connected: switching product would invalidate the binding ID. -->
+            {% if binding %}
+            <input type="hidden" name="product" value="{{ binding.product }}">
+            {% endif %}
+            <div class="grid grid-cols-2 gap-3">
+                <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
+                              {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
+                       :class="product === 'agent' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
+                    <input type="radio" name="product" value="agent" x-model="product" class="sr-only"
+                           {% if binding %}disabled{% endif %}>
+                    <i data-lucide="bot" class="w-5 h-5 text-gray-500 mb-1"></i>
+                    <span class="text-sm font-medium text-gray-900">Agent</span>
+                    <span class="text-xs text-gray-500">Replies are handled by an AI agent.</span>
+                </label>
+                <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
+                              {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
+                       :class="product === 'messenger' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
+                    <input type="radio" name="product" value="messenger" x-model="product" class="sr-only"
+                           {% if binding %}disabled{% endif %}>
+                    <i data-lucide="messages-square" class="w-5 h-5 text-gray-500 mb-1"></i>
+                    <span class="text-sm font-medium text-gray-900">Messenger</span>
+                    <span class="text-xs text-gray-500">Conversations are handled in the inbox.</span>
+                </label>
+            </div>
+            {% if binding %}
+            <p class="-mt-2 text-xs text-gray-400">
+                To use this number for something else, disconnect first — the binding ID
+                cannot follow it to a different product.
+            </p>
+            {% endif %}
+
+            <div x-show="product === 'agent'" x-cloak class="flex flex-col gap-4">
+                <div class="flex flex-col gap-2">
+                    <label for="agent" class="text-xs font-medium uppercase tracking-wide text-gray-500">Agent</label>
+                    {% if agents %}
+                    <select id="agent" name="agent"
+                            class="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white
+                                   focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                        {% for agent in agents %}
+                        <option value="{{ agent.pk }}" {% if bound_agent.pk == agent.pk %}selected{% endif %}>{{ agent.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% else %}
+                    <p class="text-sm text-gray-400">No active agents in this workspace yet.</p>
+                    {% endif %}
+                </div>
+                {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.agent %}
+            </div>
+
+            <div x-show="product === 'messenger'" x-cloak class="flex flex-col gap-4">
+                <div class="flex flex-col gap-2">
+                    <label for="usecase" class="text-xs font-medium uppercase tracking-wide text-gray-500">Usecase</label>
+                    <select id="usecase" name="usecase"
+                            class="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white
+                                   focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                        {% for value, label in messenger_usecases %}
+                        <option value="{{ value }}" {% if messenger_usecase == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <label for="product_id" class="text-xs font-medium uppercase tracking-wide text-gray-500">Messenger ID</label>
+                    <input id="product_id" name="product_id" value="{{ messenger_product_id }}"
+                           class="px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono
+                                  focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+                    <p class="text-xs text-gray-400">One messenger per workspace, so this stays as it is.</p>
+                </div>
+                {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.messenger %}
+            </div>
+
+            <div x-show="product" x-cloak class="pt-1">
+                <button type="submit"
+                        class="cursor-pointer w-full px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+                    {% if binding %}Save{% else %}Connect{% endif %}
+                </button>
+            </div>
+
+            <p x-show="!product" x-cloak class="text-sm text-gray-400">Pick a product to continue.</p>
+        </form>
+
+        {% if binding %}
+        <!-- Disconnect confirmation -->
+        <div x-show="confirmDisconnect" x-cloak
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="opacity-0 translate-y-2"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             x-transition:leave="transition ease-in duration-150"
+             x-transition:leave-start="opacity-100 translate-y-0"
+             x-transition:leave-end="opacity-0 translate-y-2"
+             @keydown.escape.window="confirmDisconnect = false"
+             class="fixed bottom-5 right-5 z-50 w-96 rounded-xl shadow-lg border border-amber-200 bg-white overflow-hidden">
+            <div class="bg-amber-50 px-4 py-3 border-b border-amber-100">
+                <p class="text-xs text-amber-800 leading-relaxed">
+                    Disconnect <span class="font-semibold">{{ binding.get_product_display }}</span>
+                    from {{ integration.name }}? This <span class="font-semibold">destroys the binding ID</span>,
+                    so any service sending through this number stops immediately and cannot
+                    resume without being given a new one. It cannot be undone.
+                </p>
+                <p class="text-[11px] text-amber-700 mt-1 font-mono break-all">{{ binding.uuid }}</p>
+                <p class="text-[11px] text-amber-700 mt-1.5">
+                    To stop it temporarily instead, use Pause — that keeps the ID.
+                </p>
+            </div>
+            <div class="flex items-center gap-2 px-4 py-2.5 bg-white">
+                <p class="text-xs text-gray-600 flex-1">Are you sure?</p>
+                <form method="POST" action="{% url 'agents:integration_unbind_product' integration.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" style="background:#dc2626;color:#fff;"
+                            class="inline-flex items-center justify-center rounded-md px-3 py-1 text-xs font-medium cursor-pointer hover:opacity-90 transition-opacity">
+                        Disconnect
+                    </button>
+                </form>
+                <button type="button" @click="confirmDisconnect = false"
+                        class="inline-flex items-center justify-center rounded-md border border-gray-200 px-3 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors cursor-pointer">
+                    Cancel
+                </button>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>[x-cloak] { display: none !important; }</style>
+{% endblock %}

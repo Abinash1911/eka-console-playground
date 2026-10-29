@@ -655,6 +655,13 @@ To make telephony work reliably:
     the WebSocket checks (close code 4001 if bad). When unset, both are open as before and a warning is
     logged on every call. See `med_assist/service/voice/telephony_auth.py`. Update the Vobiz answer URL
     *before* setting the secret.
+- **Numbers registered in the console** (channel `telephony`, provider `vobiz`) use
+  `POST /reloaded/med-assist/voice/answer/{integration_uuid}` as the Vobiz answer URL (the console shows it on
+  the number's page). The agent is whichever agent the number is bound to (`integrations` +
+  `product_integrations`, read by `med_assist/service/voice/telephony_binding.py`); an unknown, unbound,
+  paused or foreign number gets a 404. No `key` is needed: the uuid is the access control. The caller ID
+  (`From`) is given to the agent as an unverified hint (`caller_context.py`) and is not sent to tool servers
+  as the user's identity.
 - **Env vars**:
   - `VOBIZ_AUTH_ID`
   - `VOBIZ_AUTH_TOKEN`

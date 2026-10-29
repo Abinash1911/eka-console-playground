@@ -1,8 +1,8 @@
 From 2d47bdb37759a717b61dea40fe1a5a118f04aa98 Mon Sep 17 00:00:00 2001
 From: Abinash Haldorai <abinash.haldorai@eka.care>
 Date: Thu, 29 Oct 2026 17:57:34 +0000
-Subject: [PATCH] Voice: authenticate the telephony answer webhook and audio
- socket
+Subject: [PATCH 1/2] Voice: authenticate the telephony answer webhook and
+ audio socket
 
 /voice/answer was open to anyone who knew an agent id, and the Vobiz
 audio WebSocket authenticated on session existence alone (the token was

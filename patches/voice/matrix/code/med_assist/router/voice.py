@@ -29,7 +29,7 @@ from common.utils.exceptions import (
 from med_assist.models.schemas.session import CreateSessionRequest
 from med_assist.service.auth.tokens.access import parse_authenticated_request
 from med_assist.service.manage_session import create_session, get_session, owns_session
-from med_assist.service.voice import telephony_auth
+from med_assist.service.voice import telephony_auth, telephony_binding
 from med_assist.service.voice.twilio_ice import get_ice_servers_payload
 from med_assist.service.voice.webrtc_signaling import handle_webrtc_offer
 from med_assist.utils.agent_config_utils import get_agent_runtime_config
@@ -118,19 +118,59 @@ async def vobiz_answer(
     Configure the answer URL in Vobiz as:
         https://<host>/reloaded/med-assist/voice/answer?agent_id=<id>&wid=<wid>&key=<VOICE_TELEPHONY_SECRET>
     """
-    session_id = None
     bind_request_context(agent_id=agent_id)
-    try:
-        if not telephony_auth.answer_key_ok(key):
-            logger.warning(
-                "Vobiz answer rejected — bad or missing key",
-                fn="vobiz_answer",
-                agent_id=agent_id,
-                resp_code=403,
-            )
-            raise HTTPException(status_code=403, detail="Forbidden")
-        telephony_auth.warn_if_open()
+    if not telephony_auth.answer_key_ok(key):
+        logger.warning(
+            "Vobiz answer rejected — bad or missing key",
+            fn="vobiz_answer",
+            agent_id=agent_id,
+            resp_code=403,
+        )
+        raise HTTPException(status_code=403, detail="Forbidden")
+    telephony_auth.warn_if_open()
+    return await _answer_call(agent_id, From, To, CallUUID)
 
+
+@router.post("/answer/{integration_uuid}")
+async def vobiz_answer_for_number(
+    integration_uuid: str,
+    # Vobiz/Plivo sends these as form-encoded POST body
+    From: Optional[str] = Form(None),
+    To: Optional[str] = Form(None),
+    CallUUID: Optional[str] = Form(None),
+):
+    """
+    Vobiz answer endpoint for a number registered in the console.
+
+    The agent is not named in the URL: it is whichever agent the number is
+    bound to (see telephony_binding.py), so the console can re-point or pause a
+    number without touching Vobiz. The integration uuid is the access control.
+    An unknown, unbound, paused or foreign number gets a 404 and no session.
+
+    Configure the answer URL in Vobiz as (the console shows it on the number's page):
+        https://<host>/reloaded/med-assist/voice/answer/<integration_uuid>
+    """
+    try:
+        agent_id = await telephony_binding.agent_for_number(integration_uuid)
+    except telephony_binding.NumberNotServed as not_served:
+        logger.warning(
+            "Vobiz answer — number not served",
+            fn="vobiz_answer_for_number",
+            integration_uuid=integration_uuid,
+            reason=not_served.reason,
+            resp_code=404,
+        )
+        raise HTTPException(status_code=404, detail="Not found")
+    bind_request_context(agent_id=agent_id)
+    return await _answer_call(agent_id, From, To, CallUUID)
+
+
+async def _answer_call(
+    agent_id: str, From: Optional[str], To: Optional[str], CallUUID: Optional[str]
+) -> Response:
+    """Create the session for an answered call and return the XML that opens the audio stream."""
+    session_id = None
+    try:
         # Validate agent exists
         if not agent_id:
             raise HTTPException(
