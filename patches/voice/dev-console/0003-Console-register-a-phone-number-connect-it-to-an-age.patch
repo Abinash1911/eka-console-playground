@@ -1,0 +1,883 @@
+From 673faac7ce0a091484418fe48edee0c33e61552b Mon Sep 17 00:00:00 2001
+From: Abinash Haldorai <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 18:27:14 +0000
+Subject: [PATCH 3/3] Console: register a phone number, connect it to an agent,
+ and set up handover
+
+Phone numbers (channel telephony, provider vobiz) could only be created
+through the API. Add the console pages:
+
+- New Integration offers "Phone number"; its form takes the number to
+  answer and, optionally, the clinic's own number that forwards to it. The
+  number is validated (country code) and normalised; a number already
+  registered says so. What was typed stays on the form after an error.
+- The number's page shows the Answer URL to paste into Vobiz, and offers the
+  agent only (a phone number is not a WhatsApp inbox, so Messenger and the
+  status callback are hidden, and the server refuses Messenger for it).
+- A "Hand over to a person" section on that page: staff phone number, staff
+  hours (start, end, timezone; empty = always) and ring time, stored as the
+  binding's handover config. Saving a form that has no such section (a
+  WhatsApp number's) leaves a stored handover alone.
+- A line pointing to the agent's page, where voice, language and greeting
+  already live.
+
+Not in this change: a test-call button, the call list, or a "text the
+clinic" fallback. theme/static/css/dist/styles.css is the tracked Tailwind
+build and is not regenerated here (the Dockerfile builds it); run
+`python manage.py tailwind build` if the repo wants it refreshed.
+
+Tests render the real templates with a bare base layout and run without a
+database. Checked by eye in a browser from the rendered pages; not run
+against the live console.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ agents/views/integrations.py                 |  52 +++-
+ integration/tests.py                         | 299 +++++++++++++++++++
+ integration/views.py                         |  86 +++++-
+ templates/integrations/_handover_fields.html |  76 +++++
+ templates/integrations/create.html           |  18 ++
+ templates/integrations/create_phone.html     |  76 +++++
+ templates/integrations/detail.html           |  24 +-
+ 7 files changed, 620 insertions(+), 11 deletions(-)
+ create mode 100644 templates/integrations/_handover_fields.html
+ create mode 100644 templates/integrations/create_phone.html
+
+diff --git a/agents/views/integrations.py b/agents/views/integrations.py
+index 8716b94..2673b80 100644
+--- a/agents/views/integrations.py
++++ b/agents/views/integrations.py
+@@ -2,6 +2,7 @@ import hmac
+ import json
+ 
+ from django.conf import settings
++from django.db import IntegrityError
+ from django.shortcuts import render, redirect, get_object_or_404
+ from django.http import JsonResponse, HttpResponse
+ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
+@@ -9,9 +10,11 @@ from django.views.decorators.http import require_http_methods
+ 
+ from ..models import AgentConfig, Integration, AgentIntegration, WABAOnboarding
+ from core.logging import get_logger
++from pydantic import ValidationError
+ from integration import templates as template_client
+ from integration import webhooks as integration_webhooks
+ from integration.api.crud import parse_body
++from integration.constants import CHANNEL_TELEPHONY
+ from integration.schemas.templates import CreateTemplateRequest, TemplateSendRequest, variable_slots
+ from ..services.credential_verifier import (
+     verify_interakt_credentials,
+@@ -26,22 +29,39 @@ logger = get_logger(__name__)
+ # source of truth for their status even though messaging routes through Interakt.
+ META_BACKED_PROVIDERS = ("interakt_tp", "meta")
+ 
++# A phone number patients dial (Vobiz); it has its own form, not the WhatsApp credential one.
++PHONE_PROVIDER = "vobiz"
++
+ 
+ def _credential_error(request, provider, error_message):
+     if request.headers.get("HX-Request"):
+         return JsonResponse({"success": False, "error": error_message}, status=400)
+     return render(
+         request,
+-        "integrations/create_form.html",
++        "integrations/create_phone.html" if provider == PHONE_PROVIDER else "integrations/create_form.html",
+         {
+             "user_context": request.user_context,
+             "current_page": "integrations",
+             "provider": provider,
+             "error": error_message,
++            # What was typed, so a mistake does not mean starting over (never credentials).
++            "form": (
++                {key: request.POST.get(key, "") for key in ("name", "phone_number", "public_number")}
++                if provider == PHONE_PROVIDER
++                else {}
++            ),
+         },
+     )
+ 
+ 
++def _first_validation_error(exc: ValidationError) -> str:
++    """The first problem in a pydantic error, in words a person can act on."""
++    error = exc.errors()[0]
++    field = str(error["loc"][0]).replace("_", " ") if error["loc"] else ""
++    message = error["msg"].removeprefix("Value error, ")
++    return f"{field}: {message}" if field else message
++
++
+ @require_http_methods(["GET"])
+ def integration_list(request):
+     integrations = list(Integration.objects.filter(workspace_id=request.workspace_id))
+@@ -150,6 +170,12 @@ def integration_create(request):
+                 "bearer_token": bearer_token,
+                 "webhook_secret": request.POST.get("webhook_secret", "").strip(),
+             }
++        elif provider == PHONE_PROVIDER:
++            integration_type = CHANNEL_TELEPHONY
++            credentials = {
++                "phone_number": request.POST.get("phone_number", "").strip(),
++                "public_number": request.POST.get("public_number", "").strip(),
++            }
+         else:
+             if request.headers.get("HX-Request"):
+                 return JsonResponse(
+@@ -163,8 +189,18 @@ def integration_create(request):
+             integration_type=integration_type,
+             provider=provider,
+         )
+-        integ.set_credentials(credentials)
+-        integ.save()
++        try:
++            # Validates the blob against the provider's schema (a phone number must be E.164).
++            integ.set_credentials(credentials)
++            integ.save()
++        except ValidationError as exc:
++            return _credential_error(request, provider, _first_validation_error(exc))
++        except IntegrityError:
++            return _credential_error(
++                request,
++                provider,
++                "This number is already registered in your workspace (it may have been deleted earlier).",
++            )
+ 
+         if request.headers.get("HX-Request"):
+             return JsonResponse({"success": True, "id": integ.id})
+@@ -172,6 +208,16 @@ def integration_create(request):
+ 
+     # GET — show provider picker or credential form if ?provider= is set
+     provider = request.GET.get("provider", "")
++    if provider == PHONE_PROVIDER:
++        return render(
++            request,
++            "integrations/create_phone.html",
++            {
++                "user_context": request.user_context,
++                "current_page": "integrations",
++                "provider": provider,
++            },
++        )
+     if provider in ("interakt", "turn_io", "netcore"):
+         return render(
+             request,
+diff --git a/integration/tests.py b/integration/tests.py
+index 70cf682..5c9972e 100644
+--- a/integration/tests.py
++++ b/integration/tests.py
+@@ -274,3 +274,302 @@ class CallbackSlotTests(SimpleTestCase):
+         config = {"status": None, "handover": {"number": "+919999911111"}}
+         blocks = views._callback_blocks("agent", config)
+         self.assertEqual([b["url_field"] for b in blocks], ["agent_status_url"])
++
++
++def _post(data):
++    from django.test import RequestFactory
++
++    request = RequestFactory().post("/", data)
++    request.workspace_id = "ws-1"
++    request.user_context = {}
++    return request
++
++
++class HandoverFormTests(SimpleTestCase):
++    """The phone number page's handover section, read back into the binding config."""
++
++    def _read(self, **data):
++        from integration import views
++
++        return views._handover_from_post(_post(data))
++
++    def test_a_form_without_the_section_leaves_the_stored_handover_alone(self):
++        from integration import views
++
++        self.assertIs(self._read(product="agent"), views.KEEP_HANDOVER)
++
++    def test_unticked_turns_it_off_whatever_else_was_typed(self):
++        self.assertIsNone(self._read(handover_form="1", handover_number="+919999911111"))
++
++    def test_ticked_with_a_number_uses_the_defaults(self):
++        self.assertEqual(
++            self._read(handover_form="1", handover_enabled="1", handover_number=" +91 99999 11111 "),
++            {"number": "+91 99999 11111", "ring_seconds": 30},
++        )
++
++    def test_hours_come_with_a_timezone(self):
++        handover = self._read(
++            handover_form="1", handover_enabled="1", handover_number="+919999911111",
++            handover_start="09:00", handover_end="18:00", handover_ring_seconds="20",
++        )
++        self.assertEqual(handover["hours"], {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"})
++        self.assertEqual(handover["ring_seconds"], "20")  # validated and made an int by the schema
++
++    def test_hours_need_both_ends_or_neither(self):
++        with self.assertRaisesRegex(ValueError, "both a start and an end"):
++            self._read(
++                handover_form="1", handover_enabled="1", handover_number="+919999911111",
++                handover_start="09:00",
++            )
++
++    def test_the_form_shows_stored_settings_or_empty_defaults(self):
++        from integration import views
++
++        binding = MagicMock(config={"handover": {
++            "number": "+919999911111", "ring_seconds": 25,
++            "hours": {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"},
++        }})
++        self.assertEqual(views._handover_form(binding), {
++            "enabled": True, "number": "+919999911111", "start": "09:00", "end": "18:00",
++            "timezone": "Asia/Kolkata", "ring_seconds": 25,
++        })
++        empty = views._handover_form(None)
++        self.assertFalse(empty["enabled"])
++        self.assertEqual((empty["timezone"], empty["ring_seconds"]), ("Asia/Kolkata", 30))
++        self.assertFalse(views._handover_form(MagicMock(config={"status": None}))["enabled"])
++
++
++class BindPhoneNumberTests(SimpleTestCase):
++    """Connecting a phone number to an agent from the console."""
++
++    def setUp(self):
++        from types import SimpleNamespace
++
++        from integration import views
++
++        self.views = views
++        self.integ = SimpleNamespace(
++            pk=7, workspace_id="ws-1", _channel="telephony", channel="telephony", provider="vobiz"
++        )
++        self.agent = SimpleNamespace(pk=3, agent_id="agent-1", name="Front desk")
++        patches = [
++            patch.object(views, "get_object_or_404", return_value=self.integ),
++            patch.object(views, "AgentConfig"),
++            patch.object(views, "ProductIntegration"),
++            patch.object(views, "webhooks"),
++            patch.object(views, "_render", return_value="rendered"),
++        ]
++        mocks = [p.start() for p in patches]
++        for p in patches:
++            self.addCleanup(p.stop)
++        _, self.agent_config, self.binding, _, self.render = mocks
++        self.agent_config.objects.filter.return_value.first.return_value = self.agent
++        self.binding.objects.filter.return_value.first.return_value = None
++
++    def _bind(self, **data):
++        return self.views.bind_product(_post({"product": "agent", "agent": "3", **data}), pk=7)
++
++    def test_connecting_with_handover_stores_it_normalised(self):
++        self._bind(
++            handover_form="1", handover_enabled="1", handover_number="+91 99999 11111",
++            handover_start="09:00", handover_end="18:00",
++        )
++        config = self.binding.objects.create.call_args.kwargs["config"]
++        self.assertEqual(config["handover"]["number"], "+919999911111")
++        self.assertEqual(config["handover"]["hours"]["end"], "18:00")
++        self.assertEqual(config["handover"]["ring_seconds"], 30)
++        self.assertIsNone(config["status"])
++
++    def test_connecting_without_ticking_stores_no_handover(self):
++        self._bind(handover_form="1")
++        self.assertIsNone(self.binding.objects.create.call_args.kwargs["config"]["handover"])
++
++    def test_saving_a_form_with_no_handover_section_keeps_what_was_stored(self):
++        existing = MagicMock(product="agent", config={"handover": {"number": "+919999911111"}})
++        self.binding.objects.filter.return_value.first.return_value = existing
++        self._bind()
++        self.assertEqual(existing.config["handover"]["number"], "+919999911111")
++        existing.save.assert_called_once()
++
++    def test_unticking_removes_it(self):
++        existing = MagicMock(product="agent", config={"handover": {"number": "+919999911111"}})
++        self.binding.objects.filter.return_value.first.return_value = existing
++        self._bind(handover_form="1")
++        self.assertIsNone(existing.config["handover"])
++
++    def test_a_bad_number_shows_the_error_and_what_was_typed(self):
++        self._bind(handover_form="1", handover_enabled="1", handover_number="99999")
++        error = self.render.call_args.kwargs
++        self.assertIn("handover number", error["error"])
++        self.assertEqual(error["handover"]["number"], "99999")
++        self.assertTrue(error["handover"]["enabled"])
++        self.binding.objects.create.assert_not_called()
++
++    def test_half_filled_hours_show_an_error(self):
++        self._bind(
++            handover_form="1", handover_enabled="1", handover_number="+919999911111",
++            handover_end="18:00",
++        )
++        self.assertIn("both a start and an end", self.render.call_args.kwargs["error"])
++
++    def test_a_phone_number_cannot_be_a_messenger(self):
++        self.views.bind_product(_post({"product": "messenger"}), pk=7)
++        self.assertEqual(self.render.call_args.kwargs["error"], "A phone number connects to an agent.")
++        self.binding.objects.create.assert_not_called()
++
++    def test_a_whatsapp_number_can_still_be_a_messenger_and_has_no_handover(self):
++        self.integ._channel = "whatsapp"
++        self.views.bind_product(_post({"product": "messenger", "usecase": "ekascribe"}), pk=7)
++        config = self.binding.objects.create.call_args.kwargs["config"]
++        self.assertNotIn("handover", config)
++
++
++class CreatePhoneNumberTests(SimpleTestCase):
++    """Registering a phone number from the console."""
++
++    def setUp(self):
++        from agents.views import integrations as views
++
++        self.views = views
++        patches = [
++            patch.object(views, "render", return_value="rendered"),
++            patch("integration.models.Integration.save", autospec=True),
++        ]
++        mocks = [p.start() for p in patches]
++        for p in patches:
++            self.addCleanup(p.stop)
++        self.render, self.save = mocks
++        # A saved row has an id; the redirect to its page needs one.
++        self.save.side_effect = lambda integ, *args, **kwargs: setattr(integ, "id", 11)
++
++    def _create(self, **data):
++        return self.views.integration_create(
++            _post({"name": "Front desk", "provider": "vobiz", "phone_number": "+91 80000-12345", **data})
++        )
++
++    def test_a_valid_number_is_saved_as_a_telephony_integration(self):
++        response = self._create(public_number="+91 98765 43210")
++        self.save.assert_called_once()
++        integ = self.save.call_args.args[0]
++        self.assertEqual((integ.integration_type, integ.provider), ("telephony", "vobiz"))
++        self.assertEqual(response.status_code, 302)
++        self.assertTrue(response.url.endswith("/integrations/11/"))
++
++    def test_the_number_is_normalised_and_keys_the_account(self):
++        self._create(public_number="+91 98765 43210")
++        integ = self.save.call_args.args[0]
++        self.assertEqual(integ.integration_uid, "+918000012345")
++        self.assertEqual(integ.get_credentials()["public_number"], "+919876543210")
++
++    def test_a_clinic_number_without_a_country_code_is_refused_too(self):
++        self._create(public_number="98765 43210")
++        self.assertIn("public number", self.render.call_args.args[2]["error"])
++        self.save.assert_not_called()
++
++    def test_a_number_without_a_country_code_shows_an_error_and_keeps_the_form(self):
++        self._create(phone_number="80000 12345")
++        template, context = self.render.call_args.args[1], self.render.call_args.args[2]
++        self.assertEqual(template, "integrations/create_phone.html")
++        self.assertIn("phone number", context["error"])
++        self.assertEqual(context["form"]["phone_number"], "80000 12345")
++        self.assertEqual(context["form"]["name"], "Front desk")
++        self.save.assert_not_called()
++
++    def test_a_number_registered_twice_says_so(self):
++        from django.db import IntegrityError
++
++        self.save.side_effect = IntegrityError("duplicate")
++        self._create()
++        self.assertIn("already registered", self.render.call_args.args[2]["error"])
++
++    def test_the_phone_form_is_offered(self):
++        from django.test import RequestFactory
++
++        request = RequestFactory().get("/", {"provider": "vobiz"})
++        request.workspace_id, request.user_context = "ws-1", {}
++        self.views.integration_create(request)
++        self.assertEqual(self.render.call_args.args[1], "integrations/create_phone.html")
++
++
++def _stub_engine():
++    """Real console templates, with a bare base layout (the real one reads the database)."""
++    from django.conf import settings
++    from django.template import Engine
++
++    stub = "{% block breadcrumbs %}{% endblock %}{% block content %}{% endblock %}{% block extra_js %}{% endblock %}"
++    return Engine(
++        loaders=[
++            ("django.template.loaders.locmem.Loader", {"base.html": stub}),
++            ("django.template.loaders.filesystem.Loader", [str(settings.BASE_DIR / "templates")]),
++        ],
++        libraries={"ui_components": "core.templatetags.ui_components"},
++    )
++
++
++class PhoneNumberPageTests(SimpleTestCase):
++    """What the number's page shows, rendered from the real template."""
++
++    def _page(self, **overrides):
++        from types import SimpleNamespace as NS
++        from uuid import uuid4
++
++        from django.template import Context
++
++        integration = NS(
++            pk=7, name="Front desk", provider="vobiz", get_provider_display="Vobiz", uuid=uuid4()
++        )
++        context = {
++            "csrf_token": "x", "integration": integration, "credential_rows": [], "webhook_manual": True,
++            "webhook_url": "https://matrix.test/answer/abc", "is_phone": True, "binding": None,
++            "bound_agent": None, "agents": [NS(pk=3, name="Front desk agent")],
++            "callback_blocks": {"agent": [{"label": "Status callback", "url": "", "url_field": "agent_status_url",
++                                           "key_field": "k", "value_field": "v", "headers_json": "[]",
++                                           "headers_count": 0}], "messenger": []},
++            "handover": {"enabled": True, "number": "+919999911111", "start": "09:00", "end": "18:00",
++                         "timezone": "Asia/Kolkata", "ring_seconds": 30},
++            "messenger_product_id": "default", "messenger_usecases": [], "messenger_usecase": "",
++            **overrides,
++        }
++        return _stub_engine().get_template("integrations/detail.html").render(Context(context))
++
++    def test_a_phone_number_offers_the_agent_and_handover_only(self):
++        html = self._page()
++        self.assertIn("Answer calls with an agent", html)
++        self.assertIn("Hand over to a person", html)
++        self.assertIn('name="handover_number"', html)
++        self.assertIn('value="+919999911111"', html)
++        self.assertIn("Answer URL", html)
++        self.assertNotIn("Messenger", html)
++        self.assertNotIn("Status callback", html)
++
++    def test_a_whatsapp_number_is_unchanged(self):
++        html = self._page(is_phone=False)
++        self.assertIn("Messenger", html)
++        self.assertIn("Status callback", html)
++        self.assertNotIn("Hand over to a person", html)
++        self.assertIn("Webhook URL", html)
++
++    def test_the_agent_page_is_linked_for_voice_settings(self):
++        from types import SimpleNamespace as NS
++
++        html = self._page(bound_agent=NS(pk=3, name="Front desk agent"))
++        self.assertIn("voice, language and greeting", html)
++        self.assertIn('href="/agents/3/"', html)
++
++    def test_the_create_page_keeps_what_was_typed(self):
++        from django.template import Context
++
++        html = _stub_engine().get_template("integrations/create_phone.html").render(
++            Context({"csrf_token": "x", "error": "phone number: bad",
++                     "form": {"name": "Front desk", "phone_number": "80000", "public_number": ""}})
++        )
++        self.assertIn("phone number: bad", html)
++        self.assertIn('value="80000"', html)
++        self.assertIn('value="Front desk"', html)
++
++    def test_the_provider_picker_offers_a_phone_number(self):
++        from django.template import Context
++
++        html = _stub_engine().get_template("integrations/create.html").render(Context({"csrf_token": "x"}))
++        self.assertIn("?provider=vobiz", html)
++        self.assertIn("Inbound calls via Vobiz", html)
+diff --git a/integration/views.py b/integration/views.py
+index 3189b9f..378d953 100644
+--- a/integration/views.py
++++ b/integration/views.py
+@@ -103,6 +103,75 @@ def _config_from_post(request, product: str) -> dict:
+     }
+ 
+ 
++# Returned by _handover_from_post when the form had no handover section at all.
++KEEP_HANDOVER = object()
++
++DEFAULT_HANDOVER_TIMEZONE = "Asia/Kolkata"
++DEFAULT_RING_SECONDS = 30
++
++
++def _handover_from_post(request):
++    """The handover config the phone form describes, ``None`` to turn it off.
++
++    Returns ``KEEP_HANDOVER`` when the form had no handover section (a WhatsApp
++    number's form), so saving that form leaves any stored handover alone.
++    Validation is left to the product config schema.
++    """
++    if not request.POST.get("handover_form"):
++        return KEEP_HANDOVER
++    if not request.POST.get("handover_enabled"):
++        return None
++
++    start = (request.POST.get("handover_start") or "").strip()
++    end = (request.POST.get("handover_end") or "").strip()
++    if bool(start) != bool(end):
++        raise ValueError("Staff hours need both a start and an end, or neither.")
++
++    handover = {
++        "number": (request.POST.get("handover_number") or "").strip(),
++        "ring_seconds": (request.POST.get("handover_ring_seconds") or "").strip()
++        or DEFAULT_RING_SECONDS,
++    }
++    if start:
++        handover["hours"] = {
++            "start": start,
++            "end": end,
++            "timezone": (request.POST.get("handover_timezone") or "").strip()
++            or DEFAULT_HANDOVER_TIMEZONE,
++        }
++    return handover
++
++
++def _handover_form(binding: Optional[ProductIntegration]) -> dict:
++    """What the handover section shows: the stored settings, or empty defaults."""
++    stored = ((binding.config or {}).get("handover") if binding else None) or {}
++    hours = stored.get("hours") or {}
++    return {
++        "enabled": bool(stored),
++        "number": stored.get("number", ""),
++        "start": hours.get("start", ""),
++        "end": hours.get("end", ""),
++        "timezone": hours.get("timezone", DEFAULT_HANDOVER_TIMEZONE),
++        "ring_seconds": stored.get("ring_seconds", DEFAULT_RING_SECONDS),
++    }
++
++
++def _typed_handover(request) -> dict:
++    """What was typed in the handover section, to show again beside an error."""
++    return {
++        "enabled": bool(request.POST.get("handover_enabled")),
++        "number": request.POST.get("handover_number", ""),
++        "start": request.POST.get("handover_start", ""),
++        "end": request.POST.get("handover_end", ""),
++        "timezone": request.POST.get("handover_timezone", DEFAULT_HANDOVER_TIMEZONE),
++        "ring_seconds": request.POST.get("handover_ring_seconds", DEFAULT_RING_SECONDS),
++    }
++
++
++def _typed_extra(request) -> dict:
++    return {"handover": _typed_handover(request)} if request.POST.get("handover_form") else {}
++
++
+ def _callback_blocks(product: str, config: Optional[dict]) -> list:
+     """One form block per callback slot, prefilled from ``config``."""
+     blocks = []
+@@ -220,6 +289,8 @@ def _binding_context(request, integ: Integration) -> dict:
+ 
+     return {
+         "binding": binding,
++        "is_phone": integ._channel == Integration.CHANNEL_TELEPHONY,
++        "handover": _handover_form(binding),
+         "bound_agent": bound_agent,
+         "agents": AgentConfig.objects.filter(
+             workspace_id=request.workspace_id, is_active=True
+@@ -274,6 +345,9 @@ def bind_product(request, pk):
+     if product not in BINDABLE:
+         return _render(request, integ, error="Pick a product to connect.")
+ 
++    if integ._channel == Integration.CHANNEL_TELEPHONY and product != Product.AGENT.value:
++        return _render(request, integ, error="A phone number connects to an agent.")
++
+     existing = ProductIntegration.objects.filter(integration=integ).first()
+     if existing is not None and existing.product != product:
+         return _render(
+@@ -309,12 +383,18 @@ def bind_product(request, pk):
+             return _render(request, integ, error="Pick a usecase.")
+ 
+     try:
+-        config = product_configs.validate(product, _config_from_post(request, product))
++        raw_config = _config_from_post(request, product)
++        if product == Product.AGENT.value:
++            handover = _handover_from_post(request)
++            if handover is KEEP_HANDOVER:
++                handover = ((existing.config or {}).get("handover")) if existing else None
++            raw_config["handover"] = handover
++        config = product_configs.validate(product, raw_config)
+     # ValidationError subclasses ValueError, so it must be caught first.
+     except ValidationError as exc:
+-        return _render(request, integ, error=_first_error(exc))
++        return _render(request, integ, error=_first_error(exc), **_typed_extra(request))
+     except ValueError as exc:
+-        return _render(request, integ, error=str(exc))
++        return _render(request, integ, error=str(exc), **_typed_extra(request))
+ 
+     if existing is not None:
+         binding = existing
+diff --git a/templates/integrations/_handover_fields.html b/templates/integrations/_handover_fields.html
+new file mode 100644
+index 0000000..37168c3
+--- /dev/null
++++ b/templates/integrations/_handover_fields.html
+@@ -0,0 +1,76 @@
++{% comment %}
++Phone numbers: where the agent can pass a call to a person (the "handover" in the agent binding config).
++Fields are read by views._handover_from_post; the hidden marker tells it this section was on the form.
++{% endcomment %}
++<input type="hidden" name="handover_form" value="1">
++
++<div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4"
++     x-data="{ on: {% if handover.enabled %}true{% else %}false{% endif %} }">
++    <label class="flex items-start gap-3 cursor-pointer">
++        <input type="checkbox" name="handover_enabled" value="1" x-model="on"
++               class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
++        <span>
++            <span class="block text-sm font-medium text-gray-900">Hand over to a person</span>
++            <span class="block text-xs text-gray-500">
++                The agent passes the call to your staff phone when the caller asks for a person,
++                the agent cannot understand them, or it is an emergency.
++            </span>
++        </span>
++    </label>
++
++    <div x-show="on" x-cloak class="flex flex-col gap-4 pt-1">
++        <div class="flex flex-col gap-1.5">
++            <label for="handover_number" class="text-xs font-medium uppercase tracking-wide text-gray-500">Staff phone number</label>
++            <input id="handover_number" name="handover_number" type="tel" value="{{ handover.number }}"
++                   placeholder="+91 99999 11111" autocomplete="off"
++                   class="px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono
++                          focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
++            <p class="text-xs text-gray-400">Not the clinic's public number: that one forwards here.</p>
++        </div>
++
++        <div class="grid grid-cols-3 gap-3">
++            <div class="flex flex-col gap-1.5">
++                <label for="handover_start" class="text-xs font-medium uppercase tracking-wide text-gray-500">Staff from</label>
++                <input id="handover_start" name="handover_start" type="time" value="{{ handover.start }}"
++                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg
++                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
++            </div>
++            <div class="flex flex-col gap-1.5">
++                <label for="handover_end" class="text-xs font-medium uppercase tracking-wide text-gray-500">Until</label>
++                <input id="handover_end" name="handover_end" type="time" value="{{ handover.end }}"
++                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg
++                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
++            </div>
++            <div class="flex flex-col gap-1.5">
++                <label for="handover_timezone" class="text-xs font-medium uppercase tracking-wide text-gray-500">Timezone</label>
++                <input id="handover_timezone" name="handover_timezone" value="{{ handover.timezone }}"
++                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono
++                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
++            </div>
++        </div>
++        <p class="-mt-2 text-xs text-gray-400">
++            Leave both times empty if someone is always available. Outside these hours the agent
++            tells the caller when the team is in, instead of transferring.
++        </p>
++
++        <div class="flex flex-col gap-1.5 w-40">
++            <label for="handover_ring_seconds" class="text-xs font-medium uppercase tracking-wide text-gray-500">Ring for (seconds)</label>
++            <input id="handover_ring_seconds" name="handover_ring_seconds" type="number" min="10" max="60"
++                   value="{{ handover.ring_seconds }}"
++                   class="px-3 py-2 text-sm border border-gray-200 rounded-lg
++                          focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
++        </div>
++
++        <p class="text-xs text-gray-400">
++            If nobody picks up, the caller hears a short apology and the call ends. Handover only works
++            once the platform's phone secret and Vobiz login are set up.
++        </p>
++    </div>
++</div>
++
++{% if bound_agent %}
++<p class="text-xs text-gray-400">
++    The agent's voice, language and greeting are set on
++    <a href="{% url 'agents:detail' bound_agent.pk %}" class="text-indigo-600 hover:text-indigo-700">the agent's page</a>.
++</p>
++{% endif %}
+diff --git a/templates/integrations/create.html b/templates/integrations/create.html
+index 7474f69..ce520fd 100644
+--- a/templates/integrations/create.html
++++ b/templates/integrations/create.html
+@@ -71,5 +71,23 @@
+             </div>
+         </a>
+     </div>
++
++    <div>
++        <h2 class="text-sm font-semibold text-gray-900">Phone calls</h2>
++        <p class="text-sm text-gray-500 mt-1">Let an agent answer a number patients call</p>
++    </div>
++    <div class="grid grid-cols-2 gap-4 -mt-4">
++        <!-- Vobiz phone number card -->
++        <a href="{% url 'agents:integration_create' %}?provider=vobiz"
++           class="flex flex-col items-center gap-4 p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-colors cursor-pointer group">
++            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center">
++                <i data-lucide="phone" class="w-6 h-6 text-white"></i>
++            </div>
++            <div class="text-center">
++                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">Phone number</p>
++                <p class="text-xs text-gray-500 mt-1">Inbound calls via Vobiz</p>
++            </div>
++        </a>
++    </div>
+ </div>
+ {% endblock %}
+diff --git a/templates/integrations/create_phone.html b/templates/integrations/create_phone.html
+new file mode 100644
+index 0000000..e5bdd62
+--- /dev/null
++++ b/templates/integrations/create_phone.html
+@@ -0,0 +1,76 @@
++{% extends 'base.html' %}
++{% load ui_components %}
++
++{% block page_title %}New Phone Number{% endblock %}
++
++{% block breadcrumbs %}
++<li class="text-gray-500">/</li>
++<li><a href="{% url 'agents:integration_list' %}" class="hover:text-gray-700">Integrations</a></li>
++<li class="text-gray-500">/</li>
++<li><a href="{% url 'agents:integration_create' %}" class="hover:text-gray-700">New</a></li>
++<li class="text-gray-500">/</li>
++<li class="text-gray-900">Phone number</li>
++{% endblock %}
++
++{% block content %}
++<div class="bg-white rounded-lg shadow-sm p-8 max-w-lg flex flex-col gap-6">
++    <div class="flex items-center gap-3">
++        <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-teal-400 to-cyan-600">
++            <i data-lucide="phone" class="w-5 h-5 text-white"></i>
++        </div>
++        <div>
++            <h1 class="text-lg font-semibold text-gray-900">Phone number</h1>
++            <p class="text-sm text-gray-500">A number patients call, answered by an agent (Vobiz)</p>
++        </div>
++    </div>
++
++    {% if error %}
++    <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{{ error }}</div>
++    {% endif %}
++
++    <form method="POST" action="{% url 'agents:integration_create' %}" class="flex flex-col gap-5">
++        {% csrf_token %}
++        <input type="hidden" name="provider" value="vobiz">
++
++        <div class="flex flex-col gap-1.5">
++            <label for="name" class="text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
++            <input type="text" id="name" name="name" required value="{{ form.name }}"
++                   placeholder="e.g. Sunrise Clinic front desk"
++                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
++            <p class="text-xs text-gray-500">A label to identify this number</p>
++        </div>
++
++        <div class="flex flex-col gap-1.5">
++            <label for="phone_number" class="text-sm font-medium text-gray-700">Number to answer <span class="text-red-500">*</span></label>
++            <input type="tel" id="phone_number" name="phone_number" required value="{{ form.phone_number }}"
++                   placeholder="+91 80000 12345" autocomplete="off"
++                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
++            <p class="text-xs text-gray-500">The number provisioned in Vobiz, with country code. It cannot be changed later.</p>
++        </div>
++
++        <div class="flex flex-col gap-1.5">
++            <label for="public_number" class="text-sm font-medium text-gray-700">Clinic's own number</label>
++            <input type="tel" id="public_number" name="public_number" value="{{ form.public_number }}"
++                   placeholder="+91 98765 43210" autocomplete="off"
++                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
++            <p class="text-xs text-gray-500">Optional. If the clinic forwards its own number to the one above, note it here. For display only.</p>
++        </div>
++
++        <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-2">
++            <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
++            <p class="text-xs text-amber-700">Next: connect an agent, then copy the Answer URL shown on the number's page into Vobiz.</p>
++        </div>
++
++        <div class="flex gap-3 pt-2">
++            <button type="submit"
++                    class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
++                Save number
++            </button>
++            <a href="{% url 'agents:integration_create' %}"
++               class="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
++                Back
++            </a>
++        </div>
++    </form>
++</div>
++{% endblock %}
+diff --git a/templates/integrations/detail.html b/templates/integrations/detail.html
+index 5090224..a208290 100644
+--- a/templates/integrations/detail.html
++++ b/templates/integrations/detail.html
+@@ -27,8 +27,9 @@
+                     {% if integration.provider == 'interakt' %}bg-gradient-to-br from-green-400 to-emerald-600
+                     {% elif integration.provider == 'interakt_tp' %}bg-gradient-to-br from-[#1877F2] to-indigo-700
+                     {% elif integration.provider == 'turn_io' %}bg-gradient-to-br from-blue-400 to-indigo-600
++                    {% elif integration.provider == 'vobiz' %}bg-gradient-to-br from-teal-400 to-cyan-600
+                     {% else %}bg-gradient-to-br from-gray-400 to-gray-600{% endif %}">
+-                    <i data-lucide="plug" class="w-5 h-5 text-white"></i>
++                    <i data-lucide="{% if is_phone %}phone{% else %}plug{% endif %}" class="w-5 h-5 text-white"></i>
+                 </div>
+                 <div class="min-w-0">
+                     <h2 class="text-base font-semibold text-gray-900 truncate">{{ integration.name }}</h2>
+@@ -86,7 +87,7 @@
+             <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-1.5"
+                  x-data="{ copied: false }">
+                 <div class="flex items-center justify-between gap-3">
+-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Webhook URL</p>
++                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{% if is_phone %}Answer URL{% else %}Webhook URL{% endif %}</p>
+                     <button type="button"
+                             @click="navigator.clipboard.writeText($refs.hook.textContent.trim());
+                                     copied = true; setTimeout(() => copied = false, 1500)"
+@@ -143,9 +144,14 @@
+                     {% endif %}
+                 </h3>
+                 {% else %}
++                {% if is_phone %}
++                <h3 class="text-base font-semibold text-gray-900">Answer calls with an agent</h3>
++                <p class="mt-1 text-sm text-gray-500">Pick the agent that answers when patients call this number.</p>
++                {% else %}
+                 <h3 class="text-base font-semibold text-gray-900">Connect a product</h3>
+                 <p class="mt-1 text-sm text-gray-500">Choose what this number is used for.</p>
+                 {% endif %}
++                {% endif %}
+             </div>
+             {% if binding %}
+             <div class="flex items-center gap-2 flex-shrink-0">
+@@ -187,14 +193,14 @@
+         {% endif %}
+ 
+         <form method="POST" action="{% url 'agents:integration_bind_product' integration.pk %}"
+-              x-data="{ product: '{{ binding.product }}' }" class="flex flex-col gap-5">
++              x-data="{ product: '{% if is_phone %}agent{% else %}{{ binding.product }}{% endif %}' }" class="flex flex-col gap-5">
+             {% csrf_token %}
+ 
+             <!-- Locked once connected: switching product would invalidate the binding ID. -->
+             {% if binding %}
+             <input type="hidden" name="product" value="{{ binding.product }}">
+             {% endif %}
+-            <div class="grid grid-cols-2 gap-3">
++            <div class="grid {% if is_phone %}grid-cols-1{% else %}grid-cols-2{% endif %} gap-3">
+                 <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
+                               {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
+                        :class="product === 'agent' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
+@@ -204,6 +210,7 @@
+                     <span class="text-sm font-medium text-gray-900">Agent</span>
+                     <span class="text-xs text-gray-500">Replies are handled by an AI agent.</span>
+                 </label>
++                {% if not is_phone %}
+                 <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
+                               {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
+                        :class="product === 'messenger' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
+@@ -213,8 +220,9 @@
+                     <span class="text-sm font-medium text-gray-900">Messenger</span>
+                     <span class="text-xs text-gray-500">Conversations are handled in the inbox.</span>
+                 </label>
++                {% endif %}
+             </div>
+-            {% if binding %}
++            {% if binding and not is_phone %}
+             <p class="-mt-2 text-xs text-gray-400">
+                 To use this number for something else, disconnect first — the binding ID
+                 cannot follow it to a different product.
+@@ -236,9 +244,14 @@
+                     <p class="text-sm text-gray-400">No active agents in this workspace yet.</p>
+                     {% endif %}
+                 </div>
++                {% if is_phone %}
++                {% include 'integrations/_handover_fields.html' %}
++                {% else %}
+                 {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.agent %}
++                {% endif %}
+             </div>
+ 
++            {% if not is_phone %}
+             <div x-show="product === 'messenger'" x-cloak class="flex flex-col gap-4">
+                 <div class="flex flex-col gap-2">
+                     <label for="usecase" class="text-xs font-medium uppercase tracking-wide text-gray-500">Usecase</label>
+@@ -259,6 +272,7 @@
+                 </div>
+                 {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.messenger %}
+             </div>
++            {% endif %}
+ 
+             <div x-show="product" x-cloak class="pt-1">
+                 <button type="submit"
+-- 
+2.43.0
+

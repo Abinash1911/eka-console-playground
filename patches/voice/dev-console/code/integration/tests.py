@@ -256,3 +256,320 @@ class AgentHandoverConfigTests(SimpleTestCase):
                 "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
                 "config": {"handover": {"number": "nope"}},
             })
+
+
+class CallbackSlotTests(SimpleTestCase):
+    """The binding form lists a product's callback slots; other config settings are not callbacks."""
+
+    def test_only_callback_fields_are_slots(self):
+        from integration import views
+
+        self.assertEqual(views._slots("agent"), ("status",))
+        self.assertEqual(views._slots("messenger"), ("messages", "status"))
+        self.assertEqual(views._slots("ekascribe"), ())
+
+    def test_handover_does_not_become_a_callback_box(self):
+        from integration import views
+
+        config = {"status": None, "handover": {"number": "+919999911111"}}
+        blocks = views._callback_blocks("agent", config)
+        self.assertEqual([b["url_field"] for b in blocks], ["agent_status_url"])
+
+
+def _post(data):
+    from django.test import RequestFactory
+
+    request = RequestFactory().post("/", data)
+    request.workspace_id = "ws-1"
+    request.user_context = {}
+    return request
+
+
+class HandoverFormTests(SimpleTestCase):
+    """The phone number page's handover section, read back into the binding config."""
+
+    def _read(self, **data):
+        from integration import views
+
+        return views._handover_from_post(_post(data))
+
+    def test_a_form_without_the_section_leaves_the_stored_handover_alone(self):
+        from integration import views
+
+        self.assertIs(self._read(product="agent"), views.KEEP_HANDOVER)
+
+    def test_unticked_turns_it_off_whatever_else_was_typed(self):
+        self.assertIsNone(self._read(handover_form="1", handover_number="+919999911111"))
+
+    def test_ticked_with_a_number_uses_the_defaults(self):
+        self.assertEqual(
+            self._read(handover_form="1", handover_enabled="1", handover_number=" +91 99999 11111 "),
+            {"number": "+91 99999 11111", "ring_seconds": 30},
+        )
+
+    def test_hours_come_with_a_timezone(self):
+        handover = self._read(
+            handover_form="1", handover_enabled="1", handover_number="+919999911111",
+            handover_start="09:00", handover_end="18:00", handover_ring_seconds="20",
+        )
+        self.assertEqual(handover["hours"], {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"})
+        self.assertEqual(handover["ring_seconds"], "20")  # validated and made an int by the schema
+
+    def test_hours_need_both_ends_or_neither(self):
+        with self.assertRaisesRegex(ValueError, "both a start and an end"):
+            self._read(
+                handover_form="1", handover_enabled="1", handover_number="+919999911111",
+                handover_start="09:00",
+            )
+
+    def test_the_form_shows_stored_settings_or_empty_defaults(self):
+        from integration import views
+
+        binding = MagicMock(config={"handover": {
+            "number": "+919999911111", "ring_seconds": 25,
+            "hours": {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"},
+        }})
+        self.assertEqual(views._handover_form(binding), {
+            "enabled": True, "number": "+919999911111", "start": "09:00", "end": "18:00",
+            "timezone": "Asia/Kolkata", "ring_seconds": 25,
+        })
+        empty = views._handover_form(None)
+        self.assertFalse(empty["enabled"])
+        self.assertEqual((empty["timezone"], empty["ring_seconds"]), ("Asia/Kolkata", 30))
+        self.assertFalse(views._handover_form(MagicMock(config={"status": None}))["enabled"])
+
+
+class BindPhoneNumberTests(SimpleTestCase):
+    """Connecting a phone number to an agent from the console."""
+
+    def setUp(self):
+        from types import SimpleNamespace
+
+        from integration import views
+
+        self.views = views
+        self.integ = SimpleNamespace(
+            pk=7, workspace_id="ws-1", _channel="telephony", channel="telephony", provider="vobiz"
+        )
+        self.agent = SimpleNamespace(pk=3, agent_id="agent-1", name="Front desk")
+        patches = [
+            patch.object(views, "get_object_or_404", return_value=self.integ),
+            patch.object(views, "AgentConfig"),
+            patch.object(views, "ProductIntegration"),
+            patch.object(views, "webhooks"),
+            patch.object(views, "_render", return_value="rendered"),
+        ]
+        mocks = [p.start() for p in patches]
+        for p in patches:
+            self.addCleanup(p.stop)
+        _, self.agent_config, self.binding, _, self.render = mocks
+        self.agent_config.objects.filter.return_value.first.return_value = self.agent
+        self.binding.objects.filter.return_value.first.return_value = None
+
+    def _bind(self, **data):
+        return self.views.bind_product(_post({"product": "agent", "agent": "3", **data}), pk=7)
+
+    def test_connecting_with_handover_stores_it_normalised(self):
+        self._bind(
+            handover_form="1", handover_enabled="1", handover_number="+91 99999 11111",
+            handover_start="09:00", handover_end="18:00",
+        )
+        config = self.binding.objects.create.call_args.kwargs["config"]
+        self.assertEqual(config["handover"]["number"], "+919999911111")
+        self.assertEqual(config["handover"]["hours"]["end"], "18:00")
+        self.assertEqual(config["handover"]["ring_seconds"], 30)
+        self.assertIsNone(config["status"])
+
+    def test_connecting_without_ticking_stores_no_handover(self):
+        self._bind(handover_form="1")
+        self.assertIsNone(self.binding.objects.create.call_args.kwargs["config"]["handover"])
+
+    def test_saving_a_form_with_no_handover_section_keeps_what_was_stored(self):
+        existing = MagicMock(product="agent", config={"handover": {"number": "+919999911111"}})
+        self.binding.objects.filter.return_value.first.return_value = existing
+        self._bind()
+        self.assertEqual(existing.config["handover"]["number"], "+919999911111")
+        existing.save.assert_called_once()
+
+    def test_unticking_removes_it(self):
+        existing = MagicMock(product="agent", config={"handover": {"number": "+919999911111"}})
+        self.binding.objects.filter.return_value.first.return_value = existing
+        self._bind(handover_form="1")
+        self.assertIsNone(existing.config["handover"])
+
+    def test_a_bad_number_shows_the_error_and_what_was_typed(self):
+        self._bind(handover_form="1", handover_enabled="1", handover_number="99999")
+        error = self.render.call_args.kwargs
+        self.assertIn("handover number", error["error"])
+        self.assertEqual(error["handover"]["number"], "99999")
+        self.assertTrue(error["handover"]["enabled"])
+        self.binding.objects.create.assert_not_called()
+
+    def test_half_filled_hours_show_an_error(self):
+        self._bind(
+            handover_form="1", handover_enabled="1", handover_number="+919999911111",
+            handover_end="18:00",
+        )
+        self.assertIn("both a start and an end", self.render.call_args.kwargs["error"])
+
+    def test_a_phone_number_cannot_be_a_messenger(self):
+        self.views.bind_product(_post({"product": "messenger"}), pk=7)
+        self.assertEqual(self.render.call_args.kwargs["error"], "A phone number connects to an agent.")
+        self.binding.objects.create.assert_not_called()
+
+    def test_a_whatsapp_number_can_still_be_a_messenger_and_has_no_handover(self):
+        self.integ._channel = "whatsapp"
+        self.views.bind_product(_post({"product": "messenger", "usecase": "ekascribe"}), pk=7)
+        config = self.binding.objects.create.call_args.kwargs["config"]
+        self.assertNotIn("handover", config)
+
+
+class CreatePhoneNumberTests(SimpleTestCase):
+    """Registering a phone number from the console."""
+
+    def setUp(self):
+        from agents.views import integrations as views
+
+        self.views = views
+        patches = [
+            patch.object(views, "render", return_value="rendered"),
+            patch("integration.models.Integration.save", autospec=True),
+        ]
+        mocks = [p.start() for p in patches]
+        for p in patches:
+            self.addCleanup(p.stop)
+        self.render, self.save = mocks
+        # A saved row has an id; the redirect to its page needs one.
+        self.save.side_effect = lambda integ, *args, **kwargs: setattr(integ, "id", 11)
+
+    def _create(self, **data):
+        return self.views.integration_create(
+            _post({"name": "Front desk", "provider": "vobiz", "phone_number": "+91 80000-12345", **data})
+        )
+
+    def test_a_valid_number_is_saved_as_a_telephony_integration(self):
+        response = self._create(public_number="+91 98765 43210")
+        self.save.assert_called_once()
+        integ = self.save.call_args.args[0]
+        self.assertEqual((integ.integration_type, integ.provider), ("telephony", "vobiz"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.endswith("/integrations/11/"))
+
+    def test_the_number_is_normalised_and_keys_the_account(self):
+        self._create(public_number="+91 98765 43210")
+        integ = self.save.call_args.args[0]
+        self.assertEqual(integ.integration_uid, "+918000012345")
+        self.assertEqual(integ.get_credentials()["public_number"], "+919876543210")
+
+    def test_a_clinic_number_without_a_country_code_is_refused_too(self):
+        self._create(public_number="98765 43210")
+        self.assertIn("public number", self.render.call_args.args[2]["error"])
+        self.save.assert_not_called()
+
+    def test_a_number_without_a_country_code_shows_an_error_and_keeps_the_form(self):
+        self._create(phone_number="80000 12345")
+        template, context = self.render.call_args.args[1], self.render.call_args.args[2]
+        self.assertEqual(template, "integrations/create_phone.html")
+        self.assertIn("phone number", context["error"])
+        self.assertEqual(context["form"]["phone_number"], "80000 12345")
+        self.assertEqual(context["form"]["name"], "Front desk")
+        self.save.assert_not_called()
+
+    def test_a_number_registered_twice_says_so(self):
+        from django.db import IntegrityError
+
+        self.save.side_effect = IntegrityError("duplicate")
+        self._create()
+        self.assertIn("already registered", self.render.call_args.args[2]["error"])
+
+    def test_the_phone_form_is_offered(self):
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/", {"provider": "vobiz"})
+        request.workspace_id, request.user_context = "ws-1", {}
+        self.views.integration_create(request)
+        self.assertEqual(self.render.call_args.args[1], "integrations/create_phone.html")
+
+
+def _stub_engine():
+    """Real console templates, with a bare base layout (the real one reads the database)."""
+    from django.conf import settings
+    from django.template import Engine
+
+    stub = "{% block breadcrumbs %}{% endblock %}{% block content %}{% endblock %}{% block extra_js %}{% endblock %}"
+    return Engine(
+        loaders=[
+            ("django.template.loaders.locmem.Loader", {"base.html": stub}),
+            ("django.template.loaders.filesystem.Loader", [str(settings.BASE_DIR / "templates")]),
+        ],
+        libraries={"ui_components": "core.templatetags.ui_components"},
+    )
+
+
+class PhoneNumberPageTests(SimpleTestCase):
+    """What the number's page shows, rendered from the real template."""
+
+    def _page(self, **overrides):
+        from types import SimpleNamespace as NS
+        from uuid import uuid4
+
+        from django.template import Context
+
+        integration = NS(
+            pk=7, name="Front desk", provider="vobiz", get_provider_display="Vobiz", uuid=uuid4()
+        )
+        context = {
+            "csrf_token": "x", "integration": integration, "credential_rows": [], "webhook_manual": True,
+            "webhook_url": "https://matrix.test/answer/abc", "is_phone": True, "binding": None,
+            "bound_agent": None, "agents": [NS(pk=3, name="Front desk agent")],
+            "callback_blocks": {"agent": [{"label": "Status callback", "url": "", "url_field": "agent_status_url",
+                                           "key_field": "k", "value_field": "v", "headers_json": "[]",
+                                           "headers_count": 0}], "messenger": []},
+            "handover": {"enabled": True, "number": "+919999911111", "start": "09:00", "end": "18:00",
+                         "timezone": "Asia/Kolkata", "ring_seconds": 30},
+            "messenger_product_id": "default", "messenger_usecases": [], "messenger_usecase": "",
+            **overrides,
+        }
+        return _stub_engine().get_template("integrations/detail.html").render(Context(context))
+
+    def test_a_phone_number_offers_the_agent_and_handover_only(self):
+        html = self._page()
+        self.assertIn("Answer calls with an agent", html)
+        self.assertIn("Hand over to a person", html)
+        self.assertIn('name="handover_number"', html)
+        self.assertIn('value="+919999911111"', html)
+        self.assertIn("Answer URL", html)
+        self.assertNotIn("Messenger", html)
+        self.assertNotIn("Status callback", html)
+
+    def test_a_whatsapp_number_is_unchanged(self):
+        html = self._page(is_phone=False)
+        self.assertIn("Messenger", html)
+        self.assertIn("Status callback", html)
+        self.assertNotIn("Hand over to a person", html)
+        self.assertIn("Webhook URL", html)
+
+    def test_the_agent_page_is_linked_for_voice_settings(self):
+        from types import SimpleNamespace as NS
+
+        html = self._page(bound_agent=NS(pk=3, name="Front desk agent"))
+        self.assertIn("voice, language and greeting", html)
+        self.assertIn('href="/agents/3/"', html)
+
+    def test_the_create_page_keeps_what_was_typed(self):
+        from django.template import Context
+
+        html = _stub_engine().get_template("integrations/create_phone.html").render(
+            Context({"csrf_token": "x", "error": "phone number: bad",
+                     "form": {"name": "Front desk", "phone_number": "80000", "public_number": ""}})
+        )
+        self.assertIn("phone number: bad", html)
+        self.assertIn('value="80000"', html)
+        self.assertIn('value="Front desk"', html)
+
+    def test_the_provider_picker_offers_a_phone_number(self):
+        from django.template import Context
+
+        html = _stub_engine().get_template("integrations/create.html").render(Context({"csrf_token": "x"}))
+        self.assertIn("?provider=vobiz", html)
+        self.assertIn("Inbound calls via Vobiz", html)

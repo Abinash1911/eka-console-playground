@@ -1,7 +1,7 @@
-From 233831d4eef73d35f2af31707a1009805be6d8ae Mon Sep 17 00:00:00 2001
+From ff3e22decc5cc396243975841e1d3a2ea32d53be Mon Sep 17 00:00:00 2001
 From: Abinash Haldorai <abinash.haldorai@eka.care>
 Date: Thu, 29 Oct 2026 18:11:27 +0000
-Subject: [PATCH 2/2] Integrations: let an agent binding say where phone calls
+Subject: [PATCH 2/3] Integrations: let an agent binding say where phone calls
  can be handed to a person
 
 Add an optional "handover" block to the agent product config on a
@@ -23,17 +23,22 @@ credentials. Other channels ignore it.
 The phone-number rules move out of the Vobiz schema into
 integration/schemas/phone.py so both use the same one.
 
+The binding form lists a product's config fields as callback boxes; limit
+that to fields that hold a Callback, so handover is neither shown as a
+callback nor wiped when the form is saved.
+
 No console form yet; the binding API accepts it today. Not tested against
 a database.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
 ---
- integration/schemas/phone.py           | 17 +++++++
- integration/schemas/products/agent.py  | 56 ++++++++++++++++++++++-
- integration/schemas/telephone/vobiz.py | 17 +------
- integration/tests.py                   | 61 ++++++++++++++++++++++++++
- 4 files changed, 134 insertions(+), 17 deletions(-)
+ integration/schemas/phone.py           | 17 ++++++
+ integration/schemas/products/agent.py  | 56 +++++++++++++++++-
+ integration/schemas/telephone/vobiz.py | 17 +-----
+ integration/tests.py                   | 79 ++++++++++++++++++++++++++
+ integration/views.py                   | 18 +++++-
+ 5 files changed, 167 insertions(+), 20 deletions(-)
  create mode 100644 integration/schemas/phone.py
 
 diff --git a/integration/schemas/phone.py b/integration/schemas/phone.py
@@ -183,10 +188,10 @@ index 48294a0..ec9b590 100644
      def uid(self) -> Optional[str]:
          return self.phone_number
 diff --git a/integration/tests.py b/integration/tests.py
-index df77116..9fac0e6 100644
+index df77116..70cf682 100644
 --- a/integration/tests.py
 +++ b/integration/tests.py
-@@ -195,3 +195,64 @@ class TelephonyAnswerUrlTests(SimpleTestCase):
+@@ -195,3 +195,82 @@ class TelephonyAnswerUrlTests(SimpleTestCase):
          from integration import webhooks
  
          self.assertNotIn("vobiz", webhooks.PROGRAMMABLE_PROVIDERS)
@@ -251,6 +256,68 @@ index df77116..9fac0e6 100644
 +                "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
 +                "config": {"handover": {"number": "nope"}},
 +            })
++
++
++class CallbackSlotTests(SimpleTestCase):
++    """The binding form lists a product's callback slots; other config settings are not callbacks."""
++
++    def test_only_callback_fields_are_slots(self):
++        from integration import views
++
++        self.assertEqual(views._slots("agent"), ("status",))
++        self.assertEqual(views._slots("messenger"), ("messages", "status"))
++        self.assertEqual(views._slots("ekascribe"), ())
++
++    def test_handover_does_not_become_a_callback_box(self):
++        from integration import views
++
++        config = {"status": None, "handover": {"number": "+919999911111"}}
++        blocks = views._callback_blocks("agent", config)
++        self.assertEqual([b["url_field"] for b in blocks], ["agent_status_url"])
+diff --git a/integration/views.py b/integration/views.py
+index 017f06d..3189b9f 100644
+--- a/integration/views.py
++++ b/integration/views.py
+@@ -1,7 +1,7 @@
+ """Console pages for a channel integration: the account, and the product bound to it."""
+ 
+ import json
+-from typing import Optional
++from typing import Optional, get_args
+ 
+ from django.conf import settings
+ from django.shortcuts import get_object_or_404, redirect, render
+@@ -14,6 +14,7 @@ from core.logging import get_logger
+ from integration import webhooks
+ from integration.models import Integration, ProductIntegration
+ from integration.schemas import products as product_configs
++from integration.schemas.products.utils import Callback
+ 
+ logger = get_logger(__name__)
+ 
+@@ -43,9 +44,20 @@ CALLBACK_HELP = {
+ 
+ 
+ def _slots(product: str) -> tuple:
+-    """The callback slots a product's config model declares, in order."""
++    """The callback slots a product's config model declares, in order.
++
++    Only fields that hold a ``Callback``: the config can carry other settings
++    (the agent's ``handover``) that this form must neither show as a callback
++    box nor overwrite.
++    """
+     schema = product_configs.config_for(product)
+-    return tuple(schema.model_fields) if schema else ()
++    if schema is None:
++        return ()
++    return tuple(
++        name
++        for name, field in schema.model_fields.items()
++        if Callback in (field.annotation, *get_args(field.annotation))
++    )
+ 
+ 
+ def _callback(url: str, headers: Optional[dict] = None) -> Optional[dict]:
 -- 
 2.43.0
 

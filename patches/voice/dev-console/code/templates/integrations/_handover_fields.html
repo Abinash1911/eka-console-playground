@@ -1,0 +1,76 @@
+{% comment %}
+Phone numbers: where the agent can pass a call to a person (the "handover" in the agent binding config).
+Fields are read by views._handover_from_post; the hidden marker tells it this section was on the form.
+{% endcomment %}
+<input type="hidden" name="handover_form" value="1">
+
+<div class="flex flex-col gap-3 rounded-lg border border-gray-200 p-4"
+     x-data="{ on: {% if handover.enabled %}true{% else %}false{% endif %} }">
+    <label class="flex items-start gap-3 cursor-pointer">
+        <input type="checkbox" name="handover_enabled" value="1" x-model="on"
+               class="mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+        <span>
+            <span class="block text-sm font-medium text-gray-900">Hand over to a person</span>
+            <span class="block text-xs text-gray-500">
+                The agent passes the call to your staff phone when the caller asks for a person,
+                the agent cannot understand them, or it is an emergency.
+            </span>
+        </span>
+    </label>
+
+    <div x-show="on" x-cloak class="flex flex-col gap-4 pt-1">
+        <div class="flex flex-col gap-1.5">
+            <label for="handover_number" class="text-xs font-medium uppercase tracking-wide text-gray-500">Staff phone number</label>
+            <input id="handover_number" name="handover_number" type="tel" value="{{ handover.number }}"
+                   placeholder="+91 99999 11111" autocomplete="off"
+                   class="px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono
+                          focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+            <p class="text-xs text-gray-400">Not the clinic's public number: that one forwards here.</p>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3">
+            <div class="flex flex-col gap-1.5">
+                <label for="handover_start" class="text-xs font-medium uppercase tracking-wide text-gray-500">Staff from</label>
+                <input id="handover_start" name="handover_start" type="time" value="{{ handover.start }}"
+                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg
+                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="handover_end" class="text-xs font-medium uppercase tracking-wide text-gray-500">Until</label>
+                <input id="handover_end" name="handover_end" type="time" value="{{ handover.end }}"
+                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg
+                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+            </div>
+            <div class="flex flex-col gap-1.5">
+                <label for="handover_timezone" class="text-xs font-medium uppercase tracking-wide text-gray-500">Timezone</label>
+                <input id="handover_timezone" name="handover_timezone" value="{{ handover.timezone }}"
+                       class="px-3 py-2 text-sm border border-gray-200 rounded-lg font-mono
+                              focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+            </div>
+        </div>
+        <p class="-mt-2 text-xs text-gray-400">
+            Leave both times empty if someone is always available. Outside these hours the agent
+            tells the caller when the team is in, instead of transferring.
+        </p>
+
+        <div class="flex flex-col gap-1.5 w-40">
+            <label for="handover_ring_seconds" class="text-xs font-medium uppercase tracking-wide text-gray-500">Ring for (seconds)</label>
+            <input id="handover_ring_seconds" name="handover_ring_seconds" type="number" min="10" max="60"
+                   value="{{ handover.ring_seconds }}"
+                   class="px-3 py-2 text-sm border border-gray-200 rounded-lg
+                          focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400">
+        </div>
+
+        <p class="text-xs text-gray-400">
+            If nobody picks up, the caller hears a short apology and the call ends. Handover only works
+            once the platform's phone secret and Vobiz login are set up.
+        </p>
+    </div>
+</div>
+
+{% if bound_agent %}
+<p class="text-xs text-gray-400">
+    The agent's voice, language and greeting are set on
+    <a href="{% url 'agents:detail' bound_agent.pk %}" class="text-indigo-600 hover:text-indigo-700">the agent's page</a>.
+</p>
+{% endif %}

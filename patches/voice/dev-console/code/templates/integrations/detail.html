@@ -27,8 +27,9 @@
                     {% if integration.provider == 'interakt' %}bg-gradient-to-br from-green-400 to-emerald-600
                     {% elif integration.provider == 'interakt_tp' %}bg-gradient-to-br from-[#1877F2] to-indigo-700
                     {% elif integration.provider == 'turn_io' %}bg-gradient-to-br from-blue-400 to-indigo-600
+                    {% elif integration.provider == 'vobiz' %}bg-gradient-to-br from-teal-400 to-cyan-600
                     {% else %}bg-gradient-to-br from-gray-400 to-gray-600{% endif %}">
-                    <i data-lucide="plug" class="w-5 h-5 text-white"></i>
+                    <i data-lucide="{% if is_phone %}phone{% else %}plug{% endif %}" class="w-5 h-5 text-white"></i>
                 </div>
                 <div class="min-w-0">
                     <h2 class="text-base font-semibold text-gray-900 truncate">{{ integration.name }}</h2>
@@ -86,7 +87,7 @@
             <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col gap-1.5"
                  x-data="{ copied: false }">
                 <div class="flex items-center justify-between gap-3">
-                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Webhook URL</p>
+                    <p class="text-xs font-medium uppercase tracking-wide text-gray-500">{% if is_phone %}Answer URL{% else %}Webhook URL{% endif %}</p>
                     <button type="button"
                             @click="navigator.clipboard.writeText($refs.hook.textContent.trim());
                                     copied = true; setTimeout(() => copied = false, 1500)"
@@ -143,8 +144,13 @@
                     {% endif %}
                 </h3>
                 {% else %}
+                {% if is_phone %}
+                <h3 class="text-base font-semibold text-gray-900">Answer calls with an agent</h3>
+                <p class="mt-1 text-sm text-gray-500">Pick the agent that answers when patients call this number.</p>
+                {% else %}
                 <h3 class="text-base font-semibold text-gray-900">Connect a product</h3>
                 <p class="mt-1 text-sm text-gray-500">Choose what this number is used for.</p>
+                {% endif %}
                 {% endif %}
             </div>
             {% if binding %}
@@ -187,14 +193,14 @@
         {% endif %}
 
         <form method="POST" action="{% url 'agents:integration_bind_product' integration.pk %}"
-              x-data="{ product: '{{ binding.product }}' }" class="flex flex-col gap-5">
+              x-data="{ product: '{% if is_phone %}agent{% else %}{{ binding.product }}{% endif %}' }" class="flex flex-col gap-5">
             {% csrf_token %}
 
             <!-- Locked once connected: switching product would invalidate the binding ID. -->
             {% if binding %}
             <input type="hidden" name="product" value="{{ binding.product }}">
             {% endif %}
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid {% if is_phone %}grid-cols-1{% else %}grid-cols-2{% endif %} gap-3">
                 <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
                               {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
                        :class="product === 'agent' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
@@ -204,6 +210,7 @@
                     <span class="text-sm font-medium text-gray-900">Agent</span>
                     <span class="text-xs text-gray-500">Replies are handled by an AI agent.</span>
                 </label>
+                {% if not is_phone %}
                 <label class="relative flex flex-col gap-1 p-4 border rounded-xl transition-colors
                               {% if binding %}cursor-not-allowed{% else %}cursor-pointer{% endif %}"
                        :class="product === 'messenger' ? 'border-indigo-500 bg-indigo-50/60 ring-1 ring-indigo-500' : 'border-gray-200 {% if not binding %}hover:border-gray-300{% endif %}'">
@@ -213,8 +220,9 @@
                     <span class="text-sm font-medium text-gray-900">Messenger</span>
                     <span class="text-xs text-gray-500">Conversations are handled in the inbox.</span>
                 </label>
+                {% endif %}
             </div>
-            {% if binding %}
+            {% if binding and not is_phone %}
             <p class="-mt-2 text-xs text-gray-400">
                 To use this number for something else, disconnect first — the binding ID
                 cannot follow it to a different product.
@@ -236,9 +244,14 @@
                     <p class="text-sm text-gray-400">No active agents in this workspace yet.</p>
                     {% endif %}
                 </div>
+                {% if is_phone %}
+                {% include 'integrations/_handover_fields.html' %}
+                {% else %}
                 {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.agent %}
+                {% endif %}
             </div>
 
+            {% if not is_phone %}
             <div x-show="product === 'messenger'" x-cloak class="flex flex-col gap-4">
                 <div class="flex flex-col gap-2">
                     <label for="usecase" class="text-xs font-medium uppercase tracking-wide text-gray-500">Usecase</label>
@@ -259,6 +272,7 @@
                 </div>
                 {% include 'integrations/_callback_fields.html' with blocks=callback_blocks.messenger %}
             </div>
+            {% endif %}
 
             <div x-show="product" x-cloak class="pt-1">
                 <button type="submit"

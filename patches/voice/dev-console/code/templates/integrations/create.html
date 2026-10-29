@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% load ui_components %}
+
+{% block page_title %}New Integration{% endblock %}
+
+{% block breadcrumbs %}
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_list' %}" class="hover:text-gray-700">Integrations</a></li>
+<li class="text-gray-500">/</li>
+<li class="text-gray-900">New</li>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-sm p-8 max-w-2xl flex flex-col gap-8">
+    <div>
+        <h1 class="text-xl font-semibold text-gray-900">Choose a provider</h1>
+        <p class="text-sm text-gray-500 mt-1">Select the WhatsApp provider you want to connect</p>
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <!-- Meta Embedded Signup (Tech Partner) card — full width, recommended -->
+        <a href="{% url 'agents:whatsapp_onboard' %}"
+           class="col-span-2 flex items-center gap-5 p-6 border-2 border-indigo-300 bg-indigo-50 rounded-xl hover:border-indigo-500 hover:bg-indigo-100 transition-colors cursor-pointer group">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1877F2] to-indigo-700 flex-shrink-0 flex items-center justify-center">
+                <svg class="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                </svg>
+            </div>
+            <div>
+                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">
+                    Connect via Meta
+                    <span class="ml-1.5 px-1.5 py-0.5 text-xs font-medium bg-indigo-600 text-white rounded">Recommended</span>
+                </p>
+                <p class="text-xs text-gray-500 mt-0.5">One-click Meta Embedded Signup — no API keys required</p>
+            </div>
+        </a>
+
+        <!-- Interakt card -->
+        <a href="{% url 'agents:integration_create' %}?provider=interakt"
+           class="flex flex-col items-center gap-4 p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-colors cursor-pointer group">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center">
+                <i data-lucide="message-circle" class="w-6 h-6 text-white"></i>
+            </div>
+            <div class="text-center">
+                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">Interakt</p>
+                <p class="text-xs text-gray-500 mt-1">WhatsApp Business API via Interakt</p>
+            </div>
+        </a>
+
+        <!-- Turn.io card -->
+        <a href="{% url 'agents:integration_create' %}?provider=turn_io"
+           class="flex flex-col items-center gap-4 p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-colors cursor-pointer group">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center">
+                <i data-lucide="send" class="w-6 h-6 text-white"></i>
+            </div>
+            <div class="text-center">
+                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">Turn.io</p>
+                <p class="text-xs text-gray-500 mt-1">WhatsApp Business API via Turn.io</p>
+            </div>
+        </a>
+
+        <!-- Netcore card -->
+        <a href="{% url 'agents:integration_create' %}?provider=netcore"
+           class="flex flex-col items-center gap-4 p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-colors cursor-pointer group">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center">
+                <i data-lucide="zap" class="w-6 h-6 text-white"></i>
+            </div>
+            <div class="text-center">
+                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">Netcore</p>
+                <p class="text-xs text-gray-500 mt-1">WhatsApp Business API via Netcore</p>
+            </div>
+        </a>
+    </div>
+
+    <div>
+        <h2 class="text-sm font-semibold text-gray-900">Phone calls</h2>
+        <p class="text-sm text-gray-500 mt-1">Let an agent answer a number patients call</p>
+    </div>
+    <div class="grid grid-cols-2 gap-4 -mt-4">
+        <!-- Vobiz phone number card -->
+        <a href="{% url 'agents:integration_create' %}?provider=vobiz"
+           class="flex flex-col items-center gap-4 p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-400 hover:bg-indigo-50 transition-colors cursor-pointer group">
+            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-600 flex items-center justify-center">
+                <i data-lucide="phone" class="w-6 h-6 text-white"></i>
+            </div>
+            <div class="text-center">
+                <p class="text-sm font-semibold text-gray-900 group-hover:text-indigo-700">Phone number</p>
+                <p class="text-xs text-gray-500 mt-1">Inbound calls via Vobiz</p>
+            </div>
+        </a>
+    </div>
+</div>
+{% endblock %}

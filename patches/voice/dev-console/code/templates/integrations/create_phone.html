@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% load ui_components %}
+
+{% block page_title %}New Phone Number{% endblock %}
+
+{% block breadcrumbs %}
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_list' %}" class="hover:text-gray-700">Integrations</a></li>
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_create' %}" class="hover:text-gray-700">New</a></li>
+<li class="text-gray-500">/</li>
+<li class="text-gray-900">Phone number</li>
+{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-lg shadow-sm p-8 max-w-lg flex flex-col gap-6">
+    <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-teal-400 to-cyan-600">
+            <i data-lucide="phone" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+            <h1 class="text-lg font-semibold text-gray-900">Phone number</h1>
+            <p class="text-sm text-gray-500">A number patients call, answered by an agent (Vobiz)</p>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="{% url 'agents:integration_create' %}" class="flex flex-col gap-5">
+        {% csrf_token %}
+        <input type="hidden" name="provider" value="vobiz">
+
+        <div class="flex flex-col gap-1.5">
+            <label for="name" class="text-sm font-medium text-gray-700">Name <span class="text-red-500">*</span></label>
+            <input type="text" id="name" name="name" required value="{{ form.name }}"
+                   placeholder="e.g. Sunrise Clinic front desk"
+                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <p class="text-xs text-gray-500">A label to identify this number</p>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+            <label for="phone_number" class="text-sm font-medium text-gray-700">Number to answer <span class="text-red-500">*</span></label>
+            <input type="tel" id="phone_number" name="phone_number" required value="{{ form.phone_number }}"
+                   placeholder="+91 80000 12345" autocomplete="off"
+                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <p class="text-xs text-gray-500">The number provisioned in Vobiz, with country code. It cannot be changed later.</p>
+        </div>
+
+        <div class="flex flex-col gap-1.5">
+            <label for="public_number" class="text-sm font-medium text-gray-700">Clinic's own number</label>
+            <input type="tel" id="public_number" name="public_number" value="{{ form.public_number }}"
+                   placeholder="+91 98765 43210" autocomplete="off"
+                   class="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <p class="text-xs text-gray-500">Optional. If the clinic forwards its own number to the one above, note it here. For display only.</p>
+        </div>
+
+        <div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-start gap-2">
+            <i data-lucide="info" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
+            <p class="text-xs text-amber-700">Next: connect an agent, then copy the Answer URL shown on the number's page into Vobiz.</p>
+        </div>
+
+        <div class="flex gap-3 pt-2">
+            <button type="submit"
+                    class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+                Save number
+            </button>
+            <a href="{% url 'agents:integration_create' %}"
+               class="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors">
+                Back
+            </a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,7 +1,7 @@
 # Voice agent (inbound phone) patches
 
 Scope: inbound phone calls only, built on existing functionality, everything behind a per-agent switch (default off).
-Plan, in order: (1) secure the matrix answer endpoint and audio socket, (2) number-to-agent binding (dev-console telephony channel + a matrix answer route by integration uuid) with caller ID as an unverified hint, (3) `transfer_to_human` tool (callback request fallback is not in patch 3), (4) console Setup page, (5) console Calls tab, (6) tests and PR notes.
+Plan, in order: (1) secure the matrix answer endpoint and audio socket, (2) number-to-agent binding (dev-console telephony channel + a matrix answer route by integration uuid) with caller ID as an unverified hint, (3) `transfer_to_human` tool (callback request fallback is not in patch 3), (4) console Setup page (done: numbers, agent, handover; test call not included), (5) console Calls tab, (6) tests and PR notes.
 Change from the first plan: the per-agent switch is no longer a separate flag. A phone number only reaches an agent if a telephony integration is bound to it and the binding is active (pause = off), the same pattern WhatsApp numbers use.
 Approved prototype: `docs/prototypes/prototype-phone-agent.html`. Read-state of the code: see `docs/explainers/explain-voice-agent.html` and `docs/claims-to-confirm.md` (11 to 14).
 
@@ -12,6 +12,7 @@ Approved prototype: `docs/prototypes/prototype-phone-agent.html`. Read-state of 
 | 2b | Answer a number by its integration + caller ID hint (matrix, applies after patch 1) | matrix | `2569ee4` | built, tested with mocks, not pushed |
 | 3a | Handover settings on the agent binding (console, applies after 2a) | dev-console | `ee3198d` | built, tested without a database, not pushed |
 | 3b | `transfer_to_human` tool, transfer and result URLs (matrix, applies after 2b) | matrix | `2569ee4` | built, tested with mocks and hand-fed frames, not pushed |
+| 4 | Console pages: register a phone number, connect an agent, handover form (applies after 3a) | dev-console | `ee3198d` | built, rendered and checked in a browser, tested without a database, not pushed |
 
 ## Patch 1: authenticate the telephony answer webhook and audio socket (matrix)
 
@@ -76,7 +77,8 @@ Vobiz facts used (read from Vobiz's own docs on 2026-10-29, not search summaries
 ### 3a. dev-console: `patches/voice/dev-console/0002-*.patch`
 - Agent binding `config` accepts `handover`: `number` (E.164, normalised), optional `hours` (`start`, `end`, `timezone`; start after end = overnight), `ring_seconds` 10 to 60. It lives on the binding config because matrix reads it from the shared Postgres and cannot decrypt the number's credentials.
 - Phone-number rules moved to `integration/schemas/phone.py`, shared with the Vobiz schema.
-- 22 integration tests pass: 8 that were already there, 9 from patch 2a, 5 new here. Removing this change fails 4 of the new ones.
+- 24 integration tests pass at this point: 8 that were already there, 9 from patch 2a, 7 here (5 for the handover config, 2 for the callback-slot fix below). Removing this change fails 4 of the new ones.
+- Also fixes a problem this change would otherwise cause: the console's binding form listed every config field as a callback box, so `handover` would have appeared as a fake "Handover callback" and been wiped on save. `_slots` now only lists fields that hold a callback (2 tests fail without the fix).
 - No console form yet (patch 4); the binding API accepts it today.
 
 ### 3b. matrix: `patches/voice/matrix/0003-*.patch`
@@ -94,3 +96,25 @@ Not tested: a real Vobiz call or real audio. In particular that Vobiz really int
 - A transferred call is two legs with two charges on Vobiz (their docs).
 - Staff hours are checked when the tool runs, in the clinic's timezone; public holidays are not handled.
 - `VOBIZ_API_BASE_URL` defaults to Vobiz's documented base; override only if Vobiz gives another host.
+
+## Patch 4: console pages for a phone number (dev-console)
+
+`patches/voice/dev-console/0003-*.patch` (applies after 0001 and 0002 on `ee3198d`). Screenshots in `patches/voice/dev-console/screenshots/`.
+
+What a person can now do in the console, without the API
+- **Integrations, New:** a "Phone calls" tile, then a short form: name, the number to answer (with country code; cannot be changed later), and optionally the clinic's own number that forwards to it. Wrong numbers and duplicates give a clear message and keep what was typed.
+- **The number's page:** the Answer URL to paste into Vobiz (labelled "Answer URL"), the agent picker (agent only: Messenger and the status callback are hidden, and the server refuses Messenger for a phone number), Pause / Resume / Disconnect as for WhatsApp numbers (pausing makes callers get the rejecting hang-up from patch 2b).
+- **Hand over to a person:** staff phone number, staff hours (empty = always), timezone, ring seconds. Saved into the binding's `handover` config. A form without this section (WhatsApp numbers) leaves a stored handover alone; unticking removes it.
+- A pointer to the agent's page, where voice, language and greeting already live.
+
+Checked
+- 49 integration tests pass (8 existing, 41 new across patches 2a to 4), without a database. The page tests render the real templates with a bare base layout. Five deliberate breakages (wiping handover on a WhatsApp-style save, allowing Messenger on a phone number, a duplicate number crashing, Messenger card shown on phone numbers, handover section missing) each fail a test.
+- Screens rendered from the real templates and looked at in a browser (desktop, and the phone page at 390 px wide has no sideways scroll). The WhatsApp number page is unchanged.
+- `makemigrations --check` finds nothing pending.
+
+Not done / not tested
+- The "Start a test call" button, the Calls tab (patch 5), and the "text the clinic when nobody answers" fallback from the prototype.
+- Not run in the live console: the screenshots use Tailwind's in-browser build instead of the app's stylesheet. `theme/static/css/dist/styles.css` is a tracked build file; this patch does not regenerate it (the Dockerfile builds it). Run `python manage.py tailwind build` if the team keeps the file in step.
+- Saving against a real database (the tests mock the database layer).
+- Deleting a phone number is the existing soft delete: the number stays reserved, so the same number cannot be registered again in that workspace. Same as other integrations.
+- Where handover is "on" in the console but the platform has no phone secret or Vobiz login set, nothing happens on a call (matrix logs why). The page says so in a hint; it cannot detect it.
