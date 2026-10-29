@@ -48,6 +48,20 @@ class TestWsToken:
             token = telephony_auth.sign_ws_token("sess-1", now=1000)
             assert telephony_auth.verify_ws_token("sess-2", token, now=1001) is False
 
+    def test_a_token_for_one_door_does_not_open_another(self):
+        with _configured():
+            token = telephony_auth.sign_ws_token("sess-1", purpose="transfer", now=1000)
+            assert (
+                telephony_auth.verify_ws_token("sess-1", token, purpose="transfer", now=1001)
+                is True
+            )
+            assert telephony_auth.verify_ws_token("sess-1", token, now=1001) is False
+            ws_token = telephony_auth.sign_ws_token("sess-1", now=1000)
+            assert (
+                telephony_auth.verify_ws_token("sess-1", ws_token, purpose="transfer", now=1001)
+                is False
+            )
+
     def test_expires(self):
         with _configured():
             token = telephony_auth.sign_ws_token("sess-1", now=1000)

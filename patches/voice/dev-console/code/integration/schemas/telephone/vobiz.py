@@ -5,7 +5,6 @@ at the answer URL (see ``integration/webhooks.py``), whose uuid is the access
 control, so there is no key to store.
 """
 
-import re
 from typing import ClassVar, Optional, Tuple
 
 from pydantic import Field, field_validator
@@ -16,16 +15,9 @@ from integration.schemas.base import (
     ChannelUpdate,
     ProviderSchemas,
 )
+from integration.schemas.phone import normalise_e164
 
 PROVIDER = "vobiz"
-
-# E.164: "+" and up to 15 digits, first digit non-zero.
-_E164 = re.compile(r"^\+[1-9]\d{7,14}$")
-
-
-def _normalise(value: str) -> str:
-    """Drop the spaces, dashes and brackets people type; keep a leading +."""
-    return re.sub(r"[\s\-().]", "", value or "")
 
 
 class VobizCredentials(ChannelCredentials):
@@ -39,12 +31,7 @@ class VobizCredentials(ChannelCredentials):
     @field_validator("phone_number", "public_number")
     @classmethod
     def _e164(cls, value: str) -> str:
-        if value == "":
-            return value
-        value = _normalise(value)
-        if not _E164.match(value):
-            raise ValueError("must be a phone number with country code, like +918000012345")
-        return value
+        return normalise_e164(value) if value else value
 
     def uid(self) -> Optional[str]:
         return self.phone_number

@@ -1,0 +1,256 @@
+From 233831d4eef73d35f2af31707a1009805be6d8ae Mon Sep 17 00:00:00 2001
+From: Abinash Haldorai <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 18:11:27 +0000
+Subject: [PATCH 2/2] Integrations: let an agent binding say where phone calls
+ can be handed to a person
+
+Add an optional "handover" block to the agent product config on a
+binding:
+
+  {"handover": {"number": "+919999911111",
+                "hours": {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"},
+                "ring_seconds": 30}}
+
+number is the staff phone (E.164, normalised, not the clinic's public
+number). hours is optional (absent means always available; start after end
+means overnight). ring_seconds is 10 to 60. Unknown keys are rejected, as
+for every config here.
+
+It lives on the binding config rather than the number's credentials
+because matrix reads it from the shared Postgres and cannot decrypt
+credentials. Other channels ignore it.
+
+The phone-number rules move out of the Vobiz schema into
+integration/schemas/phone.py so both use the same one.
+
+No console form yet; the binding API accepts it today. Not tested against
+a database.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ integration/schemas/phone.py           | 17 +++++++
+ integration/schemas/products/agent.py  | 56 ++++++++++++++++++++++-
+ integration/schemas/telephone/vobiz.py | 17 +------
+ integration/tests.py                   | 61 ++++++++++++++++++++++++++
+ 4 files changed, 134 insertions(+), 17 deletions(-)
+ create mode 100644 integration/schemas/phone.py
+
+diff --git a/integration/schemas/phone.py b/integration/schemas/phone.py
+new file mode 100644
+index 0000000..60b95df
+--- /dev/null
++++ b/integration/schemas/phone.py
+@@ -0,0 +1,17 @@
++"""Phone-number rules shared by the telephony schemas."""
++
++import re
++
++# E.164: "+" and up to 15 digits, first digit non-zero.
++_E164 = re.compile(r"^\+[1-9]\d{7,14}$")
++
++
++def normalise_e164(value: str) -> str:
++    """Drop the spaces, dashes and brackets people type; require a country code.
++
++    Raises ``ValueError`` (which pydantic reports as a validation error).
++    """
++    cleaned = re.sub(r"[\s\-().]", "", value or "")
++    if not _E164.match(cleaned):
++        raise ValueError("must be a phone number with country code, like +918000012345")
++    return cleaned
+diff --git a/integration/schemas/products/agent.py b/integration/schemas/products/agent.py
+index 8d250e7..2e68a8c 100644
+--- a/integration/schemas/products/agent.py
++++ b/integration/schemas/products/agent.py
+@@ -1,19 +1,71 @@
+-"""Eka Agents: messages are handled in-process, so only an optional status callback."""
++"""Eka Agents: messages are handled in-process, so only an optional status callback.
++
++``handover`` is for phone numbers: where the agent can pass a call to a person.
++Other channels ignore it.
++"""
+ 
+ from typing import Optional
++from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+ 
+-from pydantic import BaseModel, ConfigDict
++from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+ 
+ from core.constants import Product
++from integration.schemas.phone import normalise_e164
+ from integration.schemas.products.utils import Callback
+ 
+ PRODUCT = Product.AGENT.value
+ 
++_HH_MM = r"^([01]\d|2[0-3]):[0-5]\d$"
++
++
++class HandoverHours(BaseModel):
++    """When staff can take a call. ``start`` after ``end`` means overnight (22:00 to 06:00)."""
++
++    model_config = ConfigDict(extra="forbid")
++
++    start: str = Field(pattern=_HH_MM)
++    end: str = Field(pattern=_HH_MM)
++    timezone: str = "Asia/Kolkata"
++
++    @field_validator("timezone")
++    @classmethod
++    def _known_timezone(cls, value: str) -> str:
++        try:
++            ZoneInfo(value)
++        except (ZoneInfoNotFoundError, ValueError):
++            raise ValueError(
++                f"unknown timezone {value!r}; use an IANA name like Asia/Kolkata"
++            ) from None
++        return value
++
++    @model_validator(mode="after")
++    def _a_real_window(self):
++        if self.start == self.end:
++            raise ValueError("start and end are the same time")
++        return self
++
++
++class Handover(BaseModel):
++    model_config = ConfigDict(extra="forbid")
++
++    # Staff phone the call is passed to; not the clinic's public number.
++    number: str
++    # Absent = always available.
++    hours: Optional[HandoverHours] = None
++    # How long to ring before giving up.
++    ring_seconds: int = Field(default=30, ge=10, le=60)
++
++    @field_validator("number")
++    @classmethod
++    def _e164(cls, value: str) -> str:
++        return normalise_e164(value)
++
+ 
+ class AgentProductConfig(BaseModel):
+     model_config = ConfigDict(extra="forbid")
+ 
+     status: Optional[Callback] = None
++    handover: Optional[Handover] = None
+ 
+ 
+ CONFIG = AgentProductConfig
+diff --git a/integration/schemas/telephone/vobiz.py b/integration/schemas/telephone/vobiz.py
+index 48294a0..ec9b590 100644
+--- a/integration/schemas/telephone/vobiz.py
++++ b/integration/schemas/telephone/vobiz.py
+@@ -5,7 +5,6 @@ at the answer URL (see ``integration/webhooks.py``), whose uuid is the access
+ control, so there is no key to store.
+ """
+ 
+-import re
+ from typing import ClassVar, Optional, Tuple
+ 
+ from pydantic import Field, field_validator
+@@ -16,17 +15,10 @@ from integration.schemas.base import (
+     ChannelUpdate,
+     ProviderSchemas,
+ )
++from integration.schemas.phone import normalise_e164
+ 
+ PROVIDER = "vobiz"
+ 
+-# E.164: "+" and up to 15 digits, first digit non-zero.
+-_E164 = re.compile(r"^\+[1-9]\d{7,14}$")
+-
+-
+-def _normalise(value: str) -> str:
+-    """Drop the spaces, dashes and brackets people type; keep a leading +."""
+-    return re.sub(r"[\s\-().]", "", value or "")
+-
+ 
+ class VobizCredentials(ChannelCredentials):
+     # Identity: the number callers dial (the one provisioned in Vobiz). Create-only.
+@@ -39,12 +31,7 @@ class VobizCredentials(ChannelCredentials):
+     @field_validator("phone_number", "public_number")
+     @classmethod
+     def _e164(cls, value: str) -> str:
+-        if value == "":
+-            return value
+-        value = _normalise(value)
+-        if not _E164.match(value):
+-            raise ValueError("must be a phone number with country code, like +918000012345")
+-        return value
++        return normalise_e164(value) if value else value
+ 
+     def uid(self) -> Optional[str]:
+         return self.phone_number
+diff --git a/integration/tests.py b/integration/tests.py
+index df77116..9fac0e6 100644
+--- a/integration/tests.py
++++ b/integration/tests.py
+@@ -195,3 +195,64 @@ class TelephonyAnswerUrlTests(SimpleTestCase):
+         from integration import webhooks
+ 
+         self.assertNotIn("vobiz", webhooks.PROGRAMMABLE_PROVIDERS)
++
++
++class AgentHandoverConfigTests(SimpleTestCase):
++    def _validate(self, config):
++        from integration.schemas import products
++
++        return products.validate("agent", config)
++
++    def test_staff_number_is_normalised_and_the_rest_defaults(self):
++        config = self._validate({"handover": {"number": "+91 99999-11111"}})
++        self.assertEqual(
++            config["handover"], {"number": "+919999911111", "hours": None, "ring_seconds": 30}
++        )
++
++    def test_hours_can_run_overnight_but_not_be_empty(self):
++        config = self._validate({
++            "handover": {"number": "+919999911111", "hours": {"start": "22:00", "end": "06:00"}}
++        })
++        self.assertEqual(config["handover"]["hours"]["timezone"], "Asia/Kolkata")
++        with self.assertRaises(ValidationError):
++            self._validate({
++                "handover": {"number": "+919999911111", "hours": {"start": "09:00", "end": "09:00"}}
++            })
++
++    def test_bad_values_are_rejected(self):
++        number = "+919999911111"
++        bad = [
++            {"number": "99999"},
++            {"number": number, "ring_seconds": 5},
++            {"number": number, "ring_seconds": 61},
++            {"number": number, "hours": {"start": "9am", "end": "18:00"}},
++            {"number": number, "hours": {"start": "09:00", "end": "25:00"}},
++            {"number": number, "hours": {"start": "09:00", "end": "18:00", "timezone": "Mars/Base"}},
++            {"number": number, "ring_to": "+911111111111"},
++        ]
++        for handover in bad:
++            with self.assertRaises(ValidationError, msg=handover):
++                self._validate({"handover": handover})
++
++    def test_the_status_callback_still_works_alongside_it(self):
++        config = self._validate({
++            "status": {"url": "https://example.com/status"},
++            "handover": {"number": "+919999911111"},
++        })
++        self.assertEqual(config["status"]["url"], "https://example.com/status")
++
++    def test_a_binding_request_carries_it(self):
++        from uuid import uuid4
++
++        from integration.schemas.requests import CreateProductIntegrationRequest
++
++        req = CreateProductIntegrationRequest.model_validate({
++            "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
++            "config": {"handover": {"number": "+91 99999 11111"}},
++        })
++        self.assertEqual(req.config["handover"]["number"], "+91 99999 11111")  # raw; normalised on save
++        with self.assertRaises(ValidationError):
++            CreateProductIntegrationRequest.model_validate({
++                "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
++                "config": {"handover": {"number": "nope"}},
++            })
+-- 
+2.43.0
+

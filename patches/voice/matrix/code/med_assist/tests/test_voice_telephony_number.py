@@ -105,10 +105,11 @@ class TestAnswerForNumber:
         assert body.session_context["caller"] == "+919876543210"
         assert b"<Stream" in response.body
 
-    async def test_answers_nothing_for_a_number_that_is_not_served(self):
+    async def test_rejects_a_number_that_is_not_served_without_a_session(self):
         refused = AsyncMock(side_effect=telephony_binding.NumberNotServed("binding is paused"))
-        exc, create = await _answer_for_number(refused)
-        assert exc.status_code == 404
+        response, create = await _answer_for_number(refused)
+        assert b'<Hangup reason="rejected"/>' in response.body
+        assert response.status_code == 200
         create.assert_not_awaited()
 
 

@@ -1,0 +1,1489 @@
+From 21d1892938398504ca7f3a3f9283af08a48810ca Mon Sep 17 00:00:00 2001
+From: Abinash Haldorai <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 18:20:18 +0000
+Subject: [PATCH 3/3] Voice: let the phone agent hand the call to a person
+
+Add the transfer_to_human tool to the phone pipeline. When a number's
+binding has a "handover" config (staff number, optional hours, ring
+seconds; written by the console), the agent can pass the call on when the
+caller asks for a person, it cannot understand them after two tries, or in
+an emergency.
+
+How it moves the call, per Vobiz's Transfer API and Dial docs:
+- The tool checks staff hours (declines outside them, telling the agent
+  when the team is in) and marks the call; it does not move it.
+- HandoverProcessor, between the agent and TTS, waits for the agent's
+  reply to end and the caller to have heard it (confirmed by a short
+  settle, so a pause between sentences does not count), then POSTs
+  {api}/Account/{auth_id}/Call/{call_uuid}/ with legs=aleg and our
+  /voice/transfer URL. A timer covers a silent reply; a refusal tells the
+  caller and lets the agent offer it again.
+- POST /voice/transfer/{session_id} returns a <Dial> to the staff phone,
+  caller ID being the Vobiz number the patient dialled.
+- POST /voice/transfer-result/{session_id} gets the final Dial status:
+  completed hangs up, anything else plays a short apology (English: Vobiz's
+  voice list has no Hindi) and hangs up.
+
+Both URLs carry a signed 10-minute token with its own purpose (an
+audio-socket token does not open them). The transfer URL returns the staff
+number, so the feature is off unless VOICE_TELEPHONY_SECRET, VOBIZ_AUTH_ID,
+VOBIZ_AUTH_TOKEN and HOST are set; the reason it is off is logged.
+
+/voice/answer/{uuid} now records which number the call is on. The legacy
+?agent_id= answer URL records none, so it offers no handover.
+
+Not tested on a real Vobiz call or with real audio: the Vobiz request and
+XML follow its documentation, and the processor is tested with frames fed
+by hand.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ med_assist/router/voice.py                    |  88 ++-
+ med_assist/service/voice/handover.py          | 185 ++++++
+ .../service/voice/handover_processor.py       | 112 ++++
+ med_assist/service/voice/handover_settings.py | 111 ++++
+ med_assist/service/voice/handover_tool.py     |  90 +++
+ med_assist/service/voice/pipeline.py          |  26 +-
+ med_assist/service/voice/telephony_binding.py |  27 +-
+ med_assist/tests/test_api_telemetry.py        |   2 +
+ med_assist/tests/test_voice_handover.py       | 613 ++++++++++++++++++
+ voice_telephony_flow.md                       |   9 +
+ 10 files changed, 1252 insertions(+), 11 deletions(-)
+ create mode 100644 med_assist/service/voice/handover.py
+ create mode 100644 med_assist/service/voice/handover_processor.py
+ create mode 100644 med_assist/service/voice/handover_settings.py
+ create mode 100644 med_assist/service/voice/handover_tool.py
+ create mode 100644 med_assist/tests/test_voice_handover.py
+
+diff --git a/med_assist/router/voice.py b/med_assist/router/voice.py
+index c48b18f..f8c04ac 100644
+--- a/med_assist/router/voice.py
++++ b/med_assist/router/voice.py
+@@ -29,7 +29,7 @@ from common.utils.exceptions import (
+ from med_assist.models.schemas.session import CreateSessionRequest
+ from med_assist.service.auth.tokens.access import parse_authenticated_request
+ from med_assist.service.manage_session import create_session, get_session, owns_session
+-from med_assist.service.voice import telephony_auth, telephony_binding
++from med_assist.service.voice import handover, telephony_auth, telephony_binding
+ from med_assist.service.voice.twilio_ice import get_ice_servers_payload
+ from med_assist.service.voice.webrtc_signaling import handle_webrtc_offer
+ from med_assist.utils.agent_config_utils import get_agent_runtime_config
+@@ -168,11 +168,15 @@ async def vobiz_answer_for_number(
+         )
+         return Response(content=REJECT_XML, media_type="application/xml")
+     bind_request_context(agent_id=agent_id)
+-    return await _answer_call(agent_id, From, To, CallUUID)
++    return await _answer_call(agent_id, From, To, CallUUID, integration_uuid=integration_uuid)
+ 
+ 
+ async def _answer_call(
+-    agent_id: str, From: Optional[str], To: Optional[str], CallUUID: Optional[str]
++    agent_id: str,
++    From: Optional[str],
++    To: Optional[str],
++    CallUUID: Optional[str],
++    integration_uuid: Optional[str] = None,
+ ) -> Response:
+     """Create the session for an answered call and return the XML that opens the audio stream."""
+     session_id = None
+@@ -213,6 +217,8 @@ async def _answer_call(
+                 "caller": From,
+                 "callee": To,
+                 "call_uuid": CallUUID,
++                # Which registered number this is, so the call can look up its handover settings.
++                **({"integration_uuid": integration_uuid} if integration_uuid else {}),
+             },
+             referer="vobiz-telephony",
+         )
+@@ -297,6 +303,82 @@ async def _answer_call(
+         raise HTTPException(status_code=500, detail="Failed to generate answer XML")
+ 
+ 
++def _require_transfer_token(session_id: str, token: str) -> None:
++    """Only a transfer URL this server signed for this session may be used (and only when signing is on)."""
++    if telephony_auth.is_enforced() and telephony_auth.verify_ws_token(
++        session_id, token, purpose=handover.TRANSFER_PURPOSE
++    ):
++        return
++    logger.warning(
++        "Transfer request rejected",
++        fn="_require_transfer_token",
++        sid=session_id,
++        error="bad token, or VOICE_TELEPHONY_SECRET not set",
++        resp_code=403,
++    )
++    raise HTTPException(status_code=403, detail="Forbidden")
++
++
++@router.post("/transfer/{session_id}")
++async def vobiz_transfer(session_id: str, token: str = Query("")):
++    """
++    The XML Vobiz runs after a call is transferred: ring the staff phone.
++
++    Vobiz fetches this from the URL we gave its Transfer API (see handover.py).
++    The signed token is the access control; the staff number only goes to a
++    request that carries one.
++    """
++    bind_request_context(session_id=session_id)
++    _require_transfer_token(session_id, token)
++    try:
++        session_cache = await get_session_from_cache(session_id)
++    except SessionNotFound:
++        logger.warning(
++            "Transfer — session not found",
++            fn="vobiz_transfer",
++            sid=session_id,
++            error="session not found",
++            resp_code=404,
++        )
++        raise HTTPException(status_code=404, detail="Session not found")
++    bind_request_context(agent_id=session_cache.agent_id, wid=session_cache.wid)
++    settings = await handover.settings_for_session(session_cache)
++    if settings is None:
++        logger.warning(
++            "Transfer — no handover configured",
++            fn="vobiz_transfer",
++            sid=session_id,
++            error="no handover settings for this number",
++            resp_code=404,
++        )
++        raise HTTPException(status_code=404, detail="Not found")
++    callee = handover.context_of(session_cache).get("callee")
++    logger.info("Transfer XML served", fn="vobiz_transfer", sid=session_id, resp_code=200)
++    return Response(
++        content=handover.transfer_xml(settings, session_id, callee), media_type="application/xml"
++    )
++
++
++@router.post("/transfer-result/{session_id}")
++async def vobiz_transfer_result(
++    session_id: str,
++    token: str = Query(""),
++    # Vobiz posts the final Dial result as form fields
++    DialStatus: Optional[str] = Form(None),
++):
++    """What Vobiz does when the Dial to staff ends: hang up if they spoke, else apologise."""
++    bind_request_context(session_id=session_id)
++    _require_transfer_token(session_id, token)
++    logger.info(
++        "Transfer result served",
++        fn="vobiz_transfer_result",
++        sid=session_id,
++        dial_status=DialStatus,
++        resp_code=200,
++    )
++    return Response(content=handover.result_xml(DialStatus), media_type="application/xml")
++
++
+ @router.get("/ice-servers")
+ async def ice_servers(
+     session_id: str = Query(..., description="Session ID"),
+diff --git a/med_assist/service/voice/handover.py b/med_assist/service/voice/handover.py
+new file mode 100644
+index 0000000..9976a07
+--- /dev/null
++++ b/med_assist/service/voice/handover.py
+@@ -0,0 +1,185 @@
++"""
++Handing a phone call to a person.
++
++How it works on Vobiz (https://www.vobiz.ai/docs/call/transfer-call and
++/docs/xml/dial):
++
++1. The agent calls the ``transfer_to_human`` tool; after it has told the caller
++   it is connecting them (see ``handover_processor``) we POST Vobiz's Transfer
++   API for the live call, pointing the caller's leg at our ``/voice/transfer``
++   URL.
++2. Vobiz interrupts the audio stream and fetches that URL, which returns a
++   ``<Dial>`` to the staff number (``transfer_xml``). The audio WebSocket closes
++   and the call is saved as usual.
++3. When the Dial ends, Vobiz asks ``/voice/transfer-result``; ``completed``
++   hangs up, anything else (busy, no answer) gets a short apology.
++
++Both URLs carry a signed, short-lived token (``telephony_auth``), and the
++feature is off unless ``VOICE_TELEPHONY_SECRET`` is set, because the transfer
++URL returns the staff number.
++
++Config: ``VOBIZ_AUTH_ID`` and ``VOBIZ_AUTH_TOKEN`` (already used by the voice
++pipeline) and optionally ``VOBIZ_API_BASE_URL``.
++"""
++
++import os
++import re
++from dataclasses import dataclass
++from typing import Awaitable, Callable, Optional
++from xml.sax.saxutils import escape, quoteattr
++
++import httpx
++import orjson
++
++from common.config import get_config
++from common.utils import get_logger
++from med_assist.models.session import SessionCache
++from med_assist.service.voice import telephony_auth, telephony_binding
++from med_assist.service.voice.handover_settings import HandoverSettings
++
++logger = get_logger("med_assist.service.voice.handover")
++
++TRANSFER_PURPOSE = "transfer"
++VOBIZ_API_BASE_URL = "https://api.vobiz.ai/api/v1"
++TRANSFER_TIMEOUT_SECS = 8
++
++# Said by Vobiz's own text-to-speech when the Dial fails after the AI has gone.
++# Vobiz's voices are listed in its docs without Hindi, so this is English.
++UNAVAILABLE_MESSAGE = (
++    "Sorry, our team could not take your call right now. Please call again later. Goodbye."
++)
++
++_E164 = re.compile(r"^\+[1-9]\d{7,14}$")
++
++
++@dataclass
++class HandoverOffer:
++    """Handover is available on this call: who to ring, and how to start the transfer."""
++
++    settings: HandoverSettings
++    transfer: Callable[[], Awaitable[bool]]
++
++
++def _http_base() -> str:
++    return (get_config().get("HOST") or "").rstrip("/")
++
++
++def _signed_url(path: str, session_id: str) -> str:
++    token = telephony_auth.sign_ws_token(session_id, purpose=TRANSFER_PURPOSE)
++    return f"{_http_base()}/reloaded/med-assist/voice/{path}/{session_id}?token={token}"
++
++
++def transfer_url(session_id: str) -> str:
++    return _signed_url("transfer", session_id)
++
++
++def result_url(session_id: str) -> str:
++    return _signed_url("transfer-result", session_id)
++
++
++def transfer_xml(settings: HandoverSettings, session_id: str, caller_id: Optional[str]) -> str:
++    """The XML Vobiz runs when the caller's leg lands on the transfer URL: ring the staff phone.
++
++    ``caller_id`` must be a Vobiz number the account owns, so it is the number
++    the patient dialled; omitted (Vobiz then uses the caller's) when unknown.
++    """
++    caller_attr = (
++        f" callerId={quoteattr(caller_id)}" if caller_id and _E164.match(caller_id) else ""
++    )
++    return (
++        '<?xml version="1.0" encoding="UTF-8"?>\n'
++        "<Response>\n"
++        f"    <Dial{caller_attr} timeout={quoteattr(str(settings.ring_seconds))}"
++        f' action={quoteattr(result_url(session_id))} method="POST" redirect="true"'
++        f" sipHeaders={quoteattr('Reference=' + session_id)}>\n"
++        f"        <Number>{escape(settings.number)}</Number>\n"
++        "    </Dial>\n"
++        "</Response>"
++    )
++
++
++def result_xml(dial_status: Optional[str]) -> str:
++    """What to do when the Dial ends: hang up if staff spoke to the caller, else apologise."""
++    if (dial_status or "").lower() == "completed":
++        body = "    <Hangup/>\n"
++    else:
++        body = f"    <Speak>{escape(UNAVAILABLE_MESSAGE)}</Speak>\n    <Hangup/>\n"
++    return f'<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n{body}</Response>'
++
++
++def context_of(session_cache: SessionCache) -> dict:
++    """The session context /voice/answer saved (server-built for phone sessions)."""
++    try:
++        context = orjson.loads(session_cache.initial_context or "{}")
++    except orjson.JSONDecodeError:
++        return {}
++    return context if isinstance(context, dict) else {}
++
++
++async def settings_for_session(session_cache: SessionCache) -> Optional[HandoverSettings]:
++    """The staff number and hours for this call's number, or None."""
++    number_uuid = context_of(session_cache).get("integration_uuid")
++    if not number_uuid:
++        return None
++    return await telephony_binding.handover_for_number(number_uuid)
++
++
++async def request_transfer(call_uuid: str, aleg_url: str) -> bool:
++    """Ask Vobiz to send the caller's leg of a live call to ``aleg_url``. True if Vobiz accepted it."""
++    auth_id = os.environ.get("VOBIZ_AUTH_ID", "")
++    auth_token = os.environ.get("VOBIZ_AUTH_TOKEN", "")
++    base = os.environ.get("VOBIZ_API_BASE_URL", VOBIZ_API_BASE_URL).rstrip("/")
++    url = f"{base}/Account/{auth_id}/Call/{call_uuid}/"
++    try:
++        async with httpx.AsyncClient(timeout=TRANSFER_TIMEOUT_SECS) as client:
++            response = await client.post(
++                url,
++                headers={"X-Auth-ID": auth_id, "X-Auth-Token": auth_token},
++                json={"legs": "aleg", "aleg_url": aleg_url, "aleg_method": "POST"},
++            )
++    except httpx.HTTPError as e:
++        logger.error("Vobiz transfer request failed", fn="request_transfer", error=type(e).__name__)
++        return False
++    if response.status_code // 100 != 2:
++        # Status only: the URL carries a token and the body is Vobiz's.
++        logger.error(
++            "Vobiz refused the transfer",
++            fn="request_transfer",
++            error=f"HTTP {response.status_code}",
++        )
++        return False
++    logger.info(
++        "Vobiz accepted the transfer", fn="request_transfer", resp_code=response.status_code
++    )
++    return True
++
++
++async def offer_for_call(
++    session_cache: SessionCache, call_id: Optional[str]
++) -> Optional[HandoverOffer]:
++    """Handover for this call, or None when any prerequisite is missing (logged)."""
++    session_id = session_cache.session_id
++    if not telephony_auth.is_enforced():
++        return _not_offered(session_id, "VOICE_TELEPHONY_SECRET is not set")
++    if not (os.environ.get("VOBIZ_AUTH_ID") and os.environ.get("VOBIZ_AUTH_TOKEN")):
++        return _not_offered(session_id, "VOBIZ_AUTH_ID / VOBIZ_AUTH_TOKEN are not set")
++    if not _http_base():
++        return _not_offered(session_id, "HOST is not set")
++    call_uuid = call_id or context_of(session_cache).get("call_uuid")
++    if not call_uuid:
++        return _not_offered(session_id, "no call id")
++    settings = await settings_for_session(session_cache)
++    if settings is None:
++        return _not_offered(session_id, "no handover configured for this number")
++
++    async def transfer() -> bool:
++        return await request_transfer(call_uuid, transfer_url(session_id))
++
++    return HandoverOffer(settings=settings, transfer=transfer)
++
++
++def _not_offered(session_id: str, why: str) -> None:
++    logger.info(
++        "Handover not offered on this call", fn="offer_for_call", sid=session_id, reason=why
++    )
++    return None
+diff --git a/med_assist/service/voice/handover_processor.py b/med_assist/service/voice/handover_processor.py
+new file mode 100644
+index 0000000..e219ba4
+--- /dev/null
++++ b/med_assist/service/voice/handover_processor.py
+@@ -0,0 +1,112 @@
++"""
++Starts the transfer once the agent has finished saying it is connecting the caller.
++
++Placed between the agent and text-to-speech in the phone pipeline. The tool only
++sets ``HandoverState.requested``; this processor waits for the agent's reply to
++end (``LLMFullResponseEndFrame``) and for the caller to have heard it
++(``BotStoppedSpeakingFrame``, confirmed by a short settle so a pause between two
++sentences does not count), then asks Vobiz to move the call. If the agent says
++nothing, a timer starts the transfer anyway. If Vobiz refuses, the caller is told
++and the agent can offer it again.
++"""
++
++import asyncio
++from typing import Awaitable, Callable
++
++from pipecat.frames.frames import (
++    BotStartedSpeakingFrame,
++    BotStoppedSpeakingFrame,
++    Frame,
++    LLMFullResponseEndFrame,
++    TTSSpeakFrame,
++)
++from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
++
++from common.utils import get_logger
++from med_assist.service.voice.handover_tool import HandoverState
++
++logger = get_logger("med_assist.service.voice.handover_processor")
++
++# After the bot stops, wait this long for it to start again (next sentence) before moving the call.
++SETTLE_SECS = 0.5
++# If the reply is never spoken (empty reply, TTS error), move the call after this long.
++SILENT_REPLY_GRACE_SECS = 8
++FAILURE_MESSAGE = "Sorry, I could not connect you right now. How else can I help you?"
++
++
++class HandoverProcessor(FrameProcessor):
++    def __init__(
++        self,
++        state: HandoverState,
++        transfer: Callable[[], Awaitable[bool]],
++        session_id: str,
++        settle_secs: float = SETTLE_SECS,
++        grace_secs: float = SILENT_REPLY_GRACE_SECS,
++        **kwargs,
++    ):
++        super().__init__(**kwargs)
++        self._state = state
++        self._transfer = transfer
++        self._session_id = session_id
++        self._settle_secs = settle_secs
++        self._grace_secs = grace_secs
++        self._reply_ended = False
++        self._bot_restarted = False
++        self._started = False
++        self._tasks: set[asyncio.Task] = set()
++
++    async def process_frame(self, frame: Frame, direction: FrameDirection):
++        await super().process_frame(frame, direction)
++        await self.push_frame(frame, direction)
++
++        if not self._state.requested or self._started:
++            return
++        if isinstance(frame, LLMFullResponseEndFrame):
++            self._reply_ended = True
++            self._spawn(self._after(self._grace_secs))
++        elif isinstance(frame, BotStartedSpeakingFrame):
++            self._bot_restarted = True
++        elif isinstance(frame, BotStoppedSpeakingFrame) and self._reply_ended:
++            self._bot_restarted = False
++            self._spawn(self._after(self._settle_secs, only_if_quiet=True))
++
++    def _spawn(self, coro):
++        task = asyncio.create_task(coro)
++        self._tasks.add(task)
++        task.add_done_callback(self._tasks.discard)
++
++    async def _after(self, delay: float, only_if_quiet: bool = False):
++        await asyncio.sleep(delay)
++        if only_if_quiet and self._bot_restarted:
++            return
++        await self._start_transfer()
++
++    async def _start_transfer(self):
++        if self._started or not self._state.requested:
++            return
++        self._started = True
++        if await self._transfer():
++            logger.info("Handover started", fn="_start_transfer", sid=self._session_id)
++            return
++        logger.error(
++            "Handover failed — caller stays with the agent",
++            fn="_start_transfer",
++            sid=self._session_id,
++            error="transfer request not accepted",
++        )
++        # Let the agent offer it again, and tell the caller now. Timers from this
++        # attempt must not fire for the next one.
++        self._cancel_pending()
++        self._state.requested = False
++        self._started = False
++        self._reply_ended = False
++        await self.push_frame(TTSSpeakFrame(text=FAILURE_MESSAGE))
++
++    def _cancel_pending(self):
++        for task in list(self._tasks):
++            if task is not asyncio.current_task():
++                task.cancel()
++
++    async def cleanup(self):
++        await super().cleanup()
++        self._cancel_pending()
+diff --git a/med_assist/service/voice/handover_settings.py b/med_assist/service/voice/handover_settings.py
+new file mode 100644
+index 0000000..2e79107
+--- /dev/null
++++ b/med_assist/service/voice/handover_settings.py
+@@ -0,0 +1,111 @@
++"""
++Where a phone call can be handed to a person, and when.
++
++The console stores this as ``handover`` in the agent binding's ``config`` (the
++``product_integrations`` row for the number); ``telephony_binding`` reads it
++here. Shape, as validated by the console:
++
++    {"number": "+919999911111",
++     "hours": {"start": "09:00", "end": "18:00", "timezone": "Asia/Kolkata"},
++     "ring_seconds": 30}
++
++``hours`` is optional (absent = always available); ``start`` after ``end``
++means overnight.
++"""
++
++import re
++from datetime import datetime, time
++from typing import Any, Optional
++from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
++
++import orjson
++from pydantic import BaseModel, Field, ValidationError, field_validator
++
++from common.utils import get_logger
++
++logger = get_logger("med_assist.service.voice.handover_settings")
++
++_E164 = re.compile(r"^\+[1-9]\d{7,14}$")
++
++
++class HandoverHours(BaseModel):
++    start: str
++    end: str
++    timezone: str = "Asia/Kolkata"
++
++    # The console validates these, but they come from a shared database and end
++    # up in a live call, so a bad value must fail here, not mid-call.
++    @field_validator("start", "end")
++    @classmethod
++    def _clock_time(cls, value: str) -> str:
++        time.fromisoformat(value)
++        return value
++
++    @field_validator("timezone")
++    @classmethod
++    def _known_timezone(cls, value: str) -> str:
++        try:
++            ZoneInfo(value)
++        except (ZoneInfoNotFoundError, ValueError):
++            raise ValueError(f"unknown timezone {value!r}") from None
++        return value
++
++
++class HandoverSettings(BaseModel):
++    number: str
++    hours: Optional[HandoverHours] = None
++    ring_seconds: int = Field(default=30, ge=10, le=60)
++
++    @field_validator("number")
++    @classmethod
++    def _phone_number(cls, value: str) -> str:
++        # It is written into call-control XML, so only a plain E.164 number is accepted.
++        if not _E164.match(value):
++            raise ValueError("number must be E.164, like +918000012345")
++        return value
++
++    def is_open(self, now: Optional[datetime] = None) -> bool:
++        """True when staff can take a call at ``now`` (default: the current time)."""
++        if self.hours is None:
++            return True
++        local = (now or datetime.now(ZoneInfo(self.hours.timezone))).astimezone(
++            ZoneInfo(self.hours.timezone)
++        )
++        start, end = time.fromisoformat(self.hours.start), time.fromisoformat(self.hours.end)
++        at = local.time().replace(second=0, microsecond=0)
++        if start < end:
++            return start <= at < end
++        return at >= start or at < end  # overnight
++
++    def hours_text(self) -> str:
++        if self.hours is None:
++            return "any time"
++        return f"{self.hours.start} to {self.hours.end} ({self.hours.timezone})"
++
++
++def from_binding_config(config: Any) -> Optional[HandoverSettings]:
++    """Handover settings from a binding's ``config`` JSON, or None if absent or unusable.
++
++    A bad value must not break the call: the agent just is not offered handover.
++    """
++    if isinstance(config, (str, bytes)):
++        try:
++            config = orjson.loads(config)
++        except orjson.JSONDecodeError:
++            logger.warning(
++                "Binding config is not JSON", fn="from_binding_config", error="invalid json"
++            )
++            return None
++    handover = (config or {}).get("handover") if isinstance(config, dict) else None
++    if not handover:
++        return None
++    try:
++        return HandoverSettings.model_validate(handover)
++    except ValidationError as e:
++        # Fields and reasons only: the input would put a phone number in the logs.
++        logger.warning(
++            "Handover settings unusable — not offering handover",
++            fn="from_binding_config",
++            error=str(e.errors(include_input=False, include_url=False, include_context=False)),
++        )
++        return None
+diff --git a/med_assist/service/voice/handover_tool.py b/med_assist/service/voice/handover_tool.py
+new file mode 100644
+index 0000000..613c7b9
+--- /dev/null
++++ b/med_assist/service/voice/handover_tool.py
+@@ -0,0 +1,90 @@
++"""
++``transfer_to_human``: the agent's way to pass a phone call to a person.
++
++The tool does not move the call itself. It checks the staff are available, marks
++the call as wanting a transfer (``HandoverState``), and tells the agent to say
++one short sentence. ``HandoverProcessor`` then starts the transfer once that
++sentence has been spoken, so the caller is never cut off mid-word.
++"""
++
++from dataclasses import dataclass
++from datetime import datetime
++from typing import Any, Dict, Optional
++
++from echo.tools.core import BaseTool
++
++from common.utils import get_logger
++from med_assist.service.voice.handover_settings import HandoverSettings
++
++logger = get_logger("med_assist.service.voice.handover_tool")
++
++REASONS = ["caller_asked", "not_understood", "emergency", "other"]
++
++
++@dataclass
++class HandoverState:
++    """Shared by the tool and the processor for one call."""
++
++    requested: bool = False
++    reason: Optional[str] = None
++
++
++class TransferToHumanTool(BaseTool):
++    name = "transfer_to_human"
++    description = (
++        "Pass this phone call to a person on our team. Use it when the caller asks for a "
++        "person, receptionist or doctor; when you still cannot understand them after trying "
++        "twice; or in an emergency. Do not use it for anything you can answer or do yourself. "
++        "After calling it, say ONE short sentence in the caller's language saying you are "
++        "connecting them to our team, then stop speaking."
++    )
++
++    def __init__(
++        self,
++        settings: HandoverSettings,
++        state: HandoverState,
++        session_id: str,
++        now: Optional[datetime] = None,
++    ):
++        self._settings = settings
++        self._state = state
++        self._session_id = session_id
++        self._now = now  # tests pin the clock; None means the real time
++
++    @property
++    def input_schema(self) -> Dict[str, Any]:
++        return {
++            "type": "object",
++            "properties": {
++                "reason": {
++                    "type": "string",
++                    "enum": REASONS,
++                    "description": "Why the call is being passed on.",
++                }
++            },
++            "required": ["reason"],
++        }
++
++    async def run(self, reason: str = "other", **_: Any) -> str:
++        reason = reason if reason in REASONS else "other"
++        if self._state.requested:
++            return "A transfer is already in progress. Do not say anything more."
++        if not self._settings.is_open(self._now):
++            logger.info(
++                "Handover declined — outside staff hours",
++                fn="run",
++                sid=self._session_id,
++                reason=reason,
++            )
++            return (
++                "Our team is not available to take calls right now; they are available "
++                f"{self._settings.hours_text()}. Do not transfer. Tell the caller this in their "
++                "language and offer to help them yourself or to try again in those hours."
++            )
++        self._state.requested = True
++        self._state.reason = reason
++        logger.info("Handover requested", fn="run", sid=self._session_id, reason=reason)
++        return (
++            "The transfer is starting. Say ONE short sentence in the caller's language telling "
++            "them you are connecting them to our team. Do not ask anything and do not say anything else."
++        )
+diff --git a/med_assist/service/voice/pipeline.py b/med_assist/service/voice/pipeline.py
+index 697f9c8..b698bac 100644
+--- a/med_assist/service/voice/pipeline.py
++++ b/med_assist/service/voice/pipeline.py
+@@ -51,8 +51,10 @@ from med_assist.config.voice import (
+ from med_assist.config.websocket import IncomingEventType
+ from med_assist.models.agent_config import AgentRuntimeConfig, VoiceAgentConfig
+ from med_assist.models.session import SessionCache
+-from med_assist.service.voice import caller_context
++from med_assist.service.voice import caller_context, handover
+ from med_assist.service.voice.agent_processor import EchoAgentProcessor, _ist_now
++from med_assist.service.voice.handover_processor import HandoverProcessor
++from med_assist.service.voice.handover_tool import HandoverState, TransferToHumanTool
+ from med_assist.service.voice.providers import create_stt_service, create_tts_service
+ from med_assist.service.voice.user_mute_strategies import (
+     EchoTailMuteStrategy,
+@@ -83,11 +85,13 @@ async def _build_agent(
+     agent_config: AgentRuntimeConfig,
+     session_cache: SessionCache,
+     caller_id: Optional[str] = None,
++    extra_tools: Optional[list] = None,
+ ) -> GenericAgent:
+     """Build a GenericAgent with tools, reusing the same logic as agent_service.
+ 
+     ``caller_id`` is the phone network's caller ID (phone pipeline only), shown
+     to the agent as an unverified hint when no signed-in user supplies a mobile.
++    ``extra_tools`` are added to the agent's tools (the phone pipeline's handover tool).
+     """
+     echo_prompt = await get_echo_agent_prompt(agent_config.prompt_config)
+ 
+@@ -177,6 +181,8 @@ async def _build_agent(
+         custom_tools = await get_custom_tools(agent_config.custom_tools)
+         tools.extend(list(custom_tools.values()))
+ 
++    tools.extend(extra_tools or [])
++
+     if agent_config.primary_llm_config:
+         logger.info(
+             "Voice LLM",
+@@ -253,8 +259,19 @@ async def run_voice_ws_pipeline(
+         # )
+ 
+         # 5. Build the GenericAgent
++        # Handover to a person is offered only when the number has it configured and
++        # everything it needs is set (handover.offer_for_call logs what is missing).
++        handover_offer = await handover.offer_for_call(session_cache, call_id)
++        handover_state = HandoverState()
+         agent = await _build_agent(
+-            agent_config, session_cache, caller_id=caller_context.caller_number(session_cache)
++            agent_config,
++            session_cache,
++            caller_id=caller_context.caller_number(session_cache),
++            extra_tools=(
++                [TransferToHumanTool(handover_offer.settings, handover_state, session_id)]
++                if handover_offer
++                else None
++            ),
+         )
+         # logger.info("Agent built", fn="run_voice_ws_pipeline", sid=session_id)
+ 
+@@ -325,6 +342,11 @@ async def run_voice_ws_pipeline(
+                 stt,
+                 user_aggregator,
+                 agent_processor,
++                *(
++                    [HandoverProcessor(handover_state, handover_offer.transfer, session_id)]
++                    if handover_offer
++                    else []
++                ),
+                 tts,
+                 transport.output(),
+                 assistant_aggregator,
+diff --git a/med_assist/service/voice/telephony_binding.py b/med_assist/service/voice/telephony_binding.py
+index d7a2592..1fef5e6 100644
+--- a/med_assist/service/voice/telephony_binding.py
++++ b/med_assist/service/voice/telephony_binding.py
+@@ -19,6 +19,8 @@ from uuid import UUID
+ from echo_agents.utils.pg_wrapper import get_pg_client
+ 
+ from common.utils import get_logger
++from med_assist.service.voice import handover_settings
++from med_assist.service.voice.handover_settings import HandoverSettings
+ 
+ logger = get_logger("med_assist.service.voice.telephony_binding")
+ 
+@@ -29,7 +31,7 @@ PRODUCT = "agent"
+ # One row per number: LEFT JOIN so "registered but not bound" is told apart from "unknown".
+ _SQL = (
+     "SELECT i.workspace_id, i.channel, i.provider, i.is_active, i.archived_at, "
+-    "       p.product, p.product_id, p.is_active AS binding_active "
++    "       p.product, p.product_id, p.is_active AS binding_active, p.config "
+     "FROM integrations i "
+     "LEFT JOIN product_integrations p ON p.integration_id = i.id "
+     "WHERE i.uuid = $1"
+@@ -52,8 +54,8 @@ def _workspace_of(agent_id: str) -> Optional[str]:
+         return None
+ 
+ 
+-async def agent_for_number(integration_uuid: str) -> str:
+-    """The agent id bound to this number, or raise ``NumberNotServed``."""
++async def _serving_row(integration_uuid: str) -> dict:
++    """The number's row if an agent should answer it, else raise ``NumberNotServed``."""
+     try:
+         number_uuid = UUID(integration_uuid)
+     except ValueError:
+@@ -73,9 +75,22 @@ async def agent_for_number(integration_uuid: str) -> str:
+     if not row["binding_active"]:
+         raise NumberNotServed("binding is paused")
+ 
+-    agent_id = row["product_id"]
+     # The binding API does not check that the agent belongs to the number's
+     # workspace, so check it here: a number must never open another workspace's agent.
+-    if _workspace_of(agent_id) != row["workspace_id"]:
++    if _workspace_of(row["product_id"]) != row["workspace_id"]:
+         raise NumberNotServed("agent belongs to another workspace")
+-    return agent_id
++    return row
++
++
++async def agent_for_number(integration_uuid: str) -> str:
++    """The agent id bound to this number, or raise ``NumberNotServed``."""
++    return (await _serving_row(integration_uuid))["product_id"]
++
++
++async def handover_for_number(integration_uuid: str) -> Optional[HandoverSettings]:
++    """Where this number's calls can be handed to a person, or None (not configured, or not served)."""
++    try:
++        row = await _serving_row(integration_uuid)
++    except NumberNotServed:
++        return None
++    return handover_settings.from_binding_config(row["config"])
+diff --git a/med_assist/tests/test_api_telemetry.py b/med_assist/tests/test_api_telemetry.py
+index d71fbe3..83a97c4 100644
+--- a/med_assist/tests/test_api_telemetry.py
++++ b/med_assist/tests/test_api_telemetry.py
+@@ -487,6 +487,8 @@ _OUTCOME_IN_HELPER = {
+     "chat_stream": "generate",
+     "vobiz_answer": "_answer_call",
+     "vobiz_answer_for_number": "_answer_call",
++    "vobiz_transfer": "_require_transfer_token",
++    "vobiz_transfer_result": "_require_transfer_token",
+ }
+ 
+ _SUCCESS_MARKERS = (
+diff --git a/med_assist/tests/test_voice_handover.py b/med_assist/tests/test_voice_handover.py
+new file mode 100644
+index 0000000..d3214fa
+--- /dev/null
++++ b/med_assist/tests/test_voice_handover.py
+@@ -0,0 +1,613 @@
++import asyncio
++import base64
++import xml.etree.ElementTree as ET
++from datetime import datetime, timezone
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock, patch
++from zoneinfo import ZoneInfo
++
++import orjson
++import pytest
++from fastapi import HTTPException
++from pipecat.frames.frames import (
++    BotStartedSpeakingFrame,
++    BotStoppedSpeakingFrame,
++    LLMFullResponseEndFrame,
++    TTSSpeakFrame,
++)
++from pipecat.processors.frame_processor import FrameDirection
++
++from common.utils.exceptions import SessionNotFound
++from med_assist.service.voice import handover, handover_settings, telephony_auth, telephony_binding
++from med_assist.service.voice.handover_processor import FAILURE_MESSAGE, HandoverProcessor
++from med_assist.service.voice.handover_settings import HandoverSettings
++from med_assist.service.voice.handover_tool import HandoverState, TransferToHumanTool
++
++IST = ZoneInfo("Asia/Kolkata")
++SECRET = "s3cret-value"
++WORKSPACE = "b-1708593434660086"
++AGENT_ID = base64.b64encode(f"agent-uuid#{WORKSPACE}".encode()).decode()
++NUMBER_UUID = "0e01e91b-dd5b-4055-9a4c-19742b1325a9"
++STAFF = "+919999911111"
++CONFIG = {
++    "handover": {"number": STAFF, "hours": {"start": "09:00", "end": "18:00"}, "ring_seconds": 25}
++}
++
++
++def _settings(**overrides):
++    return HandoverSettings.model_validate({**CONFIG["handover"], **overrides})
++
++
++def _at(hour, minute=0, tz=IST):
++    return datetime(2026, 10, 29, hour, minute, tzinfo=tz)
++
++
++def _secret(value=SECRET):
++    return patch.object(
++        telephony_auth,
++        "get_config_value",
++        lambda key, default=None: value if key == "VOICE_TELEPHONY_SECRET" else default,
++    )
++
++
++def _host():
++    return patch.object(handover, "get_config", lambda: {"HOST": "https://matrix.test"})
++
++
++class TestSettings:
++    def test_reads_the_binding_config_from_a_dict_or_json(self):
++        assert handover_settings.from_binding_config(CONFIG).number == STAFF
++        assert handover_settings.from_binding_config(orjson.dumps(CONFIG)).ring_seconds == 25
++        assert handover_settings.from_binding_config(orjson.dumps(CONFIG).decode()).number == STAFF
++
++    @pytest.mark.parametrize(
++        "config",
++        [
++            None,
++            {},
++            {"handover": None},
++            "not json",
++            {"handover": {"number": "99999"}},
++            {"handover": {"number": STAFF, "ring_seconds": 3}},
++            {"handover": {"number": STAFF, "hours": {"start": "9am", "end": "18:00"}}},
++            {
++                "handover": {
++                    "number": STAFF,
++                    "hours": {"start": "09:00", "end": "18:00", "timezone": "Mars/Base"},
++                }
++            },
++        ],
++    )
++    def test_anything_unusable_means_no_handover_not_a_crash(self, config):
++        assert handover_settings.from_binding_config(config) is None
++
++    def test_a_bad_number_is_not_echoed_into_the_logs(self):
++        with patch.object(handover_settings, "logger") as logger:
++            handover_settings.from_binding_config({"handover": {"number": "SECRET-ish-123"}})
++        assert "SECRET-ish-123" not in str(logger.warning.call_args)
++
++    def test_staff_hours(self):
++        s = _settings()
++        assert s.is_open(_at(9, 0)) is True  # start is inclusive
++        assert s.is_open(_at(17, 59)) is True
++        assert s.is_open(_at(18, 0)) is False  # end is exclusive
++        assert s.is_open(_at(3, 0)) is False
++
++    def test_hours_are_read_in_the_clinics_timezone(self):
++        s = _settings()
++        assert (
++            s.is_open(datetime(2026, 10, 29, 4, 30, tzinfo=timezone.utc)) is True
++        )  # 10:00 in India
++        # 13:00 UTC looks like office hours on a UTC clock, but it is 18:30 in India.
++        assert s.is_open(datetime(2026, 10, 29, 13, 0, tzinfo=timezone.utc)) is False
++
++    def test_overnight_hours(self):
++        s = _settings(hours={"start": "22:00", "end": "06:00"})
++        assert s.is_open(_at(23, 0)) is True
++        assert s.is_open(_at(5, 59)) is True
++        assert s.is_open(_at(12, 0)) is False
++
++    def test_no_hours_means_always_open(self):
++        assert _settings(hours=None).is_open(_at(3, 0)) is True
++        assert _settings(hours=None).hours_text() == "any time"
++
++
++def _row(**overrides):
++    row = {
++        "workspace_id": WORKSPACE,
++        "channel": "telephony",
++        "provider": "vobiz",
++        "is_active": True,
++        "archived_at": None,
++        "product": "agent",
++        "product_id": AGENT_ID,
++        "binding_active": True,
++        "config": orjson.dumps(CONFIG).decode(),
++    }
++    row.update(overrides)
++    return row
++
++
++@pytest.mark.asyncio
++class TestHandoverForNumber:
++    async def _lookup(self, row):
++        pg = MagicMock()
++        pg.fetch_one = AsyncMock(return_value=row)
++        with patch.object(telephony_binding, "get_pg_client", lambda: pg):
++            return await telephony_binding.handover_for_number(NUMBER_UUID)
++
++    async def test_returns_the_settings_for_a_served_number(self):
++        assert (await self._lookup(_row())).number == STAFF
++
++    async def test_none_when_the_number_has_no_handover(self):
++        assert await self._lookup(_row(config="{}")) is None
++
++    async def test_none_when_the_number_is_not_served(self):
++        assert await self._lookup(_row(binding_active=False)) is None
++        assert await self._lookup(None) is None
++
++
++class TestXml:
++    def test_transfer_xml_rings_the_staff_phone_from_the_dialled_number(self):
++        with _secret(), _host():
++            root = ET.fromstring(handover.transfer_xml(_settings(), "sess-1", "+918000012345"))
++        dial = root.find("Dial")
++        assert dial.get("callerId") == "+918000012345"
++        assert dial.get("timeout") == "25"
++        assert dial.get("redirect") == "true"
++        assert dial.find("Number").text == STAFF
++        action = dial.get("action")
++        assert action.startswith(
++            "https://matrix.test/reloaded/med-assist/voice/transfer-result/sess-1?token="
++        )
++
++    def test_caller_id_is_left_out_when_unknown_or_not_a_phone_number(self):
++        with _secret(), _host():
++            for callee in (None, "", "not-a-number", '+91"><Hangup/>'):
++                dial = ET.fromstring(handover.transfer_xml(_settings(), "sess-1", callee)).find(
++                    "Dial"
++                )
++                assert dial.get("callerId") is None
++
++    def test_result_urls_carry_tokens_that_open_only_their_own_door(self):
++        with _secret(), _host():
++            url = handover.result_url("sess-1")
++            token = url.split("?token=")[1]
++            assert telephony_auth.verify_ws_token(
++                "sess-1", token, purpose=handover.TRANSFER_PURPOSE
++            )
++            assert not telephony_auth.verify_ws_token(
++                "sess-1", token
++            )  # not the audio-socket purpose
++
++    def test_a_finished_call_hangs_up_and_anything_else_apologises(self):
++        done = ET.fromstring(handover.result_xml("completed"))
++        assert [e.tag for e in done] == ["Hangup"]
++        for status in ("busy", "no-answer", "failed", "timeout", "", None):
++            tags = [e.tag for e in ET.fromstring(handover.result_xml(status))]
++            assert tags == ["Speak", "Hangup"]
++
++
++def _vobiz_client(response=None, error=None):
++    """A stand-in for httpx.AsyncClient that records the POST."""
++    client = MagicMock()
++    client.post = AsyncMock(side_effect=error, return_value=response)
++    holder = MagicMock()
++    holder.__aenter__ = AsyncMock(return_value=client)
++    holder.__aexit__ = AsyncMock(return_value=False)
++    return client, patch.object(handover.httpx, "AsyncClient", MagicMock(return_value=holder))
++
++
++@pytest.mark.asyncio
++class TestRequestTransfer:
++    ENV = {"VOBIZ_AUTH_ID": "MA_TEST", "VOBIZ_AUTH_TOKEN": "tok"}
++
++    async def test_sends_the_documented_transfer_request(self):
++        client, patched = _vobiz_client(SimpleNamespace(status_code=202))
++        with patched, patch.dict("os.environ", self.ENV):
++            assert (
++                await handover.request_transfer("call-1", "https://matrix.test/t?token=x") is True
++            )
++        args, kwargs = client.post.await_args
++        assert args[0] == "https://api.vobiz.ai/api/v1/Account/MA_TEST/Call/call-1/"
++        assert kwargs["headers"] == {"X-Auth-ID": "MA_TEST", "X-Auth-Token": "tok"}
++        assert kwargs["json"] == {
++            "legs": "aleg",
++            "aleg_url": "https://matrix.test/t?token=x",
++            "aleg_method": "POST",
++        }
++
++    async def test_the_api_base_can_be_overridden(self):
++        client, patched = _vobiz_client(SimpleNamespace(status_code=202))
++        with (
++            patched,
++            patch.dict("os.environ", {**self.ENV, "VOBIZ_API_BASE_URL": "https://api.test/v1/"}),
++        ):
++            await handover.request_transfer("call-1", "https://x")
++        assert client.post.await_args.args[0] == "https://api.test/v1/Account/MA_TEST/Call/call-1/"
++
++    @pytest.mark.parametrize("status", [400, 401, 404, 500])
++    async def test_a_refusal_is_false_and_the_token_is_not_logged(self, status):
++        _, patched = _vobiz_client(SimpleNamespace(status_code=status))
++        with (
++            patched,
++            patch.dict("os.environ", self.ENV),
++            patch.object(handover, "logger") as logger,
++        ):
++            assert await handover.request_transfer("call-1", "https://x/t?token=TOPSECRET") is False
++        assert "TOPSECRET" not in str(logger.error.call_args)
++
++    async def test_a_network_error_is_false_not_an_exception(self):
++        _, patched = _vobiz_client(error=handover.httpx.ConnectTimeout("slow"))
++        with patched, patch.dict("os.environ", self.ENV):
++            assert await handover.request_transfer("call-1", "https://x") is False
++
++
++def _session(context=None, session_id="sess-1"):
++    return SimpleNamespace(
++        session_id=session_id,
++        agent_id=AGENT_ID,
++        wid=WORKSPACE,
++        initial_context=orjson.dumps(
++            context
++            if context is not None
++            else {
++                "channel": "vobiz",
++                "caller": "+919876543210",
++                "callee": "+918000012345",
++                "call_uuid": "call-1",
++                "integration_uuid": NUMBER_UUID,
++            }
++        ).decode(),
++    )
++
++
++@pytest.mark.asyncio
++class TestOfferForCall:
++    ENV = {"VOBIZ_AUTH_ID": "MA_TEST", "VOBIZ_AUTH_TOKEN": "tok"}
++
++    async def _offer(
++        self, session=None, call_id="call-1", secret=SECRET, env=None, settings=None, host=True
++    ):
++        env = self.ENV if env is None else env
++        found = AsyncMock(return_value=_settings() if settings is None else settings)
++        with (
++            _secret(secret),
++            patch.dict("os.environ", env, clear=False),
++            patch.object(telephony_binding, "handover_for_number", found),
++            patch.object(
++                handover, "get_config", lambda: {"HOST": "https://matrix.test"} if host else {}
++            ),
++        ):
++            return await handover.offer_for_call(session or _session(), call_id), found
++
++    async def test_offered_when_everything_is_in_place(self):
++        offer, found = await self._offer()
++        assert offer.settings.number == STAFF
++        found.assert_awaited_once_with(NUMBER_UUID)
++
++    async def test_the_transfer_moves_the_call_to_the_signed_transfer_url(self):
++        offer, _ = await self._offer(call_id="stream-call-9")
++        with (
++            _secret(),
++            _host(),
++            patch.object(handover, "request_transfer", AsyncMock(return_value=True)) as req,
++        ):
++            assert await offer.transfer() is True
++        call_uuid, url = req.await_args.args
++        assert call_uuid == "stream-call-9"  # the stream's call id wins over the answer's
++        assert url.startswith(
++            "https://matrix.test/reloaded/med-assist/voice/transfer/sess-1?token="
++        )
++
++    async def test_falls_back_to_the_call_id_from_the_answer(self):
++        offer, _ = await self._offer(call_id="")
++        with (
++            _secret(),
++            _host(),
++            patch.object(handover, "request_transfer", AsyncMock(return_value=True)) as req,
++        ):
++            await offer.transfer()
++        assert req.await_args.args[0] == "call-1"
++
++    async def test_not_offered_without_the_shared_secret(self):
++        offer, found = await self._offer(secret=None)
++        assert offer is None
++        found.assert_not_awaited()
++
++    async def test_not_offered_without_vobiz_credentials(self):
++        with patch.dict("os.environ", {}, clear=True):
++            offer, _ = await self._offer(env={})
++        assert offer is None
++
++    async def test_not_offered_without_a_public_host(self):
++        offer, _ = await self._offer(host=False)
++        assert offer is None
++
++    async def test_not_offered_without_a_call_id(self):
++        session = _session({"channel": "vobiz", "integration_uuid": NUMBER_UUID})
++        offer, _ = await self._offer(session=session, call_id="")
++        assert offer is None
++
++    async def test_not_offered_for_a_legacy_answer_url_with_no_number(self):
++        session = _session({"channel": "vobiz", "call_uuid": "call-1"})
++        offer, _ = await self._offer(session=session)
++        assert offer is None
++
++
++@pytest.mark.asyncio
++class TestTool:
++    def _tool(self, state=None, now=None, **settings):
++        state = state or HandoverState()
++        return TransferToHumanTool(_settings(**settings), state, "sess-1", now=now), state
++
++    async def test_inside_staff_hours_it_marks_the_transfer_and_tells_the_agent_to_say_one_sentence(
++        self,
++    ):
++        tool, state = self._tool(now=_at(10))
++        text = await tool.run(reason="caller_asked")
++        assert state.requested is True and state.reason == "caller_asked"
++        assert "ONE short sentence" in text
++
++    async def test_outside_staff_hours_it_declines_and_says_when_they_are_in(self):
++        tool, state = self._tool(now=_at(21))
++        text = await tool.run(reason="caller_asked")
++        assert state.requested is False
++        assert "09:00 to 18:00 (Asia/Kolkata)" in text
++        assert "Do not transfer" in text
++
++    async def test_asking_twice_does_not_transfer_twice(self):
++        tool, _ = self._tool(now=_at(10))
++        await tool.run(reason="caller_asked")
++        assert "already in progress" in await tool.run(reason="caller_asked")
++
++    async def test_an_unknown_reason_is_treated_as_other(self):
++        tool, state = self._tool(now=_at(10))
++        await tool.run(reason="because")
++        assert state.reason == "other"
++
++
++def test_the_tool_is_valid_for_the_llm():
++    schema = TransferToHumanTool(_settings(), HandoverState(), "sess-1").to_anthropic_schema()
++    assert schema["name"] == "transfer_to_human"
++    assert schema["input_schema"]["properties"]["reason"]["enum"]
++    assert schema["input_schema"]["required"] == ["reason"]
++
++
++class _Pushed:
++    def __init__(self):
++        self.frames = []
++
++    async def __call__(self, frame, direction=FrameDirection.DOWNSTREAM):
++        self.frames.append(frame)
++
++
++def _processor(requested=True, transfer_ok=True, settle=0.01, grace=0.15):
++    state = HandoverState(requested=requested)
++    transfer = AsyncMock(return_value=transfer_ok)
++    processor = HandoverProcessor(state, transfer, "sess-1", settle_secs=settle, grace_secs=grace)
++    pushed = _Pushed()
++    processor.push_frame = pushed
++    return processor, state, transfer, pushed
++
++
++async def _send(processor, *frames):
++    for frame in frames:
++        await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
++
++
++@pytest.mark.asyncio
++class TestProcessor:
++    async def test_transfers_once_the_reply_is_over_and_the_caller_has_heard_it(self):
++        processor, _, transfer, pushed = _processor()
++        await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.08)
++        transfer.assert_awaited_once()
++        assert len(pushed.frames) == 2  # frames always pass through
++
++    async def test_does_not_transfer_on_a_pause_before_the_reply_has_ended(self):
++        processor, _, transfer, _ = _processor()
++        await _send(processor, BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.08)
++        transfer.assert_not_awaited()
++        await processor.cleanup()
++
++    async def test_a_pause_between_sentences_does_not_transfer_early(self):
++        processor, _, transfer, _ = _processor(settle=0.05)
++        await _send(
++            processor,
++            LLMFullResponseEndFrame(),
++            BotStoppedSpeakingFrame(),
++            BotStartedSpeakingFrame(),
++        )
++        await asyncio.sleep(0.1)
++        transfer.assert_not_awaited()
++        await _send(processor, BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.12)
++        transfer.assert_awaited_once()
++        await processor.cleanup()
++
++    async def test_a_silent_reply_still_transfers_after_the_grace_period(self):
++        processor, _, transfer, _ = _processor(grace=0.05)
++        await _send(processor, LLMFullResponseEndFrame())
++        await asyncio.sleep(0.15)
++        transfer.assert_awaited_once()
++
++    async def test_nothing_happens_unless_the_tool_asked(self):
++        processor, _, transfer, _ = _processor(requested=False)
++        await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.2)
++        transfer.assert_not_awaited()
++
++    async def test_the_transfer_is_started_only_once(self):
++        processor, _, transfer, _ = _processor(settle=0.01, grace=0.05)
++        await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.2)  # the grace timer fires too
++        transfer.assert_awaited_once()
++
++    async def test_when_vobiz_refuses_the_caller_is_told_and_the_agent_may_try_again(self):
++        processor, state, transfer, pushed = _processor(transfer_ok=False, settle=0.01, grace=0.1)
++        await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.04)  # refused; the first attempt's grace timer is still pending
++        spoken = [f for f in pushed.frames if isinstance(f, TTSSpeakFrame)]
++        assert [f.text for f in spoken] == [FAILURE_MESSAGE]
++        assert state.requested is False
++
++        # The agent asks again straight away. The first attempt's timer must not
++        # fire for this one before its reply has even ended.
++        state.requested = True
++        transfer.return_value = True
++        await asyncio.sleep(0.15)
++        assert transfer.await_count == 1
++        await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
++        await asyncio.sleep(0.06)
++        assert transfer.await_count == 2
++
++
++def _answer_context(create):
++    _, body = create.await_args.args
++    return body.session_context
++
++
++@pytest.mark.asyncio
++class TestRoutes:
++    async def _call(self, route, *args, **kwargs):
++        from med_assist.router import voice
++
++        return await getattr(voice, route)(*args, **kwargs)
++
++    def _good(self, session_id="sess-1"):
++        with _secret():
++            return telephony_auth.sign_ws_token(session_id, purpose=handover.TRANSFER_PURPOSE)
++
++    async def _transfer(self, token, session=None, settings=None, lookup_error=None):
++        with (
++            _secret(),
++            _host(),
++            patch(
++                "med_assist.router.voice.get_session_from_cache",
++                AsyncMock(side_effect=lookup_error, return_value=session or _session()),
++            ),
++            patch.object(
++                handover,
++                "settings_for_session",
++                AsyncMock(return_value=_settings() if settings is None else settings),
++            ),
++        ):
++            return await self._call("vobiz_transfer", "sess-1", token=token)
++
++    async def test_the_transfer_url_rings_the_staff_phone(self):
++        response = await self._transfer(self._good())
++        root = ET.fromstring(response.body)
++        assert root.find("Dial/Number").text == STAFF
++        assert root.find("Dial").get("callerId") == "+918000012345"
++
++    async def test_the_transfer_url_refuses_a_missing_wrong_or_other_purpose_token(self):
++        with _secret():
++            ws_token = telephony_auth.sign_ws_token("sess-1")  # an audio-socket token
++        for token in ("", "1.deadbeef", ws_token):
++            with pytest.raises(HTTPException) as refused:
++                await self._transfer(token)
++            assert refused.value.status_code == 403
++
++    async def test_the_transfer_url_is_off_without_the_shared_secret(self):
++        with pytest.raises(HTTPException) as refused:
++            with _secret(None), _host():
++                await self._call("vobiz_transfer", "sess-1", token="")
++        assert refused.value.status_code == 403
++
++    async def test_the_transfer_url_404s_for_an_unknown_session_or_a_number_without_handover(self):
++        token = self._good()
++        with pytest.raises(HTTPException) as missing:
++            await self._transfer(token, lookup_error=SessionNotFound())
++        assert missing.value.status_code == 404
++        with (
++            _secret(),
++            _host(),
++            patch(
++                "med_assist.router.voice.get_session_from_cache", AsyncMock(return_value=_session())
++            ),
++            patch.object(handover, "settings_for_session", AsyncMock(return_value=None)),
++        ):
++            with pytest.raises(HTTPException) as none_configured:
++                await self._call("vobiz_transfer", "sess-1", token=token)
++        assert none_configured.value.status_code == 404
++
++    async def test_the_result_url_needs_the_token_and_answers_by_dial_status(self):
++        token = self._good()
++        with _secret():
++            done = await self._call(
++                "vobiz_transfer_result", "sess-1", token=token, DialStatus="completed"
++            )
++            missed = await self._call(
++                "vobiz_transfer_result", "sess-1", token=token, DialStatus="no-answer"
++            )
++            with pytest.raises(HTTPException) as refused:
++                await self._call(
++                    "vobiz_transfer_result", "sess-1", token="", DialStatus="completed"
++                )
++        assert [e.tag for e in ET.fromstring(done.body)] == ["Hangup"]
++        assert [e.tag for e in ET.fromstring(missed.body)] == ["Speak", "Hangup"]
++        assert refused.value.status_code == 403
++
++    async def test_the_answer_for_a_number_records_which_number_it_was(self):
++        from med_assist.router.voice import vobiz_answer_for_number
++
++        create = AsyncMock(return_value=SimpleNamespace(session_id="sess-1"))
++        with (
++            patch("med_assist.router.voice.create_session", create),
++            patch(
++                "med_assist.router.voice.get_config", lambda: {"HOST": "https://matrix.eka.care"}
++            ),
++            patch.object(telephony_binding, "agent_for_number", AsyncMock(return_value=AGENT_ID)),
++        ):
++            await vobiz_answer_for_number(
++                NUMBER_UUID, From="+919876543210", To="+918000012345", CallUUID="call-1"
++            )
++        assert _answer_context(create)["integration_uuid"] == NUMBER_UUID
++
++    async def test_the_legacy_answer_url_records_no_number_so_it_offers_no_handover(self):
++        from med_assist.router.voice import vobiz_answer
++
++        create = AsyncMock(return_value=SimpleNamespace(session_id="sess-1"))
++        with (
++            patch("med_assist.router.voice.create_session", create),
++            patch(
++                "med_assist.router.voice.get_config", lambda: {"HOST": "https://matrix.eka.care"}
++            ),
++            _secret(None),
++        ):
++            await vobiz_answer(
++                AGENT_ID, key=None, From="+919876543210", To="+918000012345", CallUUID="call-1"
++            )
++        assert "integration_uuid" not in _answer_context(create)
++
++
++@pytest.mark.asyncio
++async def test_the_handover_tool_reaches_the_agent():
++    from med_assist.service.voice import pipeline
++
++    prompt = SimpleNamespace(task=SimpleNamespace(description="BASE"), timezone=None)
++    agent_config = SimpleNamespace(
++        prompt_config=object(),
++        mcp_configs=None,
++        knowledge_bases=None,
++        custom_tools=None,
++        primary_llm_config=None,
++        workspace_id="w",
++    )
++    session_cache = SimpleNamespace(
++        userid=None, session_id="sess-1", tz="Asia/Kolkata", wid=WORKSPACE, agent_id=AGENT_ID
++    )
++    tool = TransferToHumanTool(_settings(), HandoverState(), "sess-1")
++    generic = MagicMock()
++    with (
++        patch.object(pipeline, "get_echo_agent_prompt", AsyncMock(return_value=prompt)),
++        patch.object(pipeline, "enrich_prompt_with_kb_context", AsyncMock()),
++        patch.object(pipeline, "session_region", AsyncMock(return_value="IN")),
++        patch.object(pipeline, "GenericAgent", generic),
++    ):
++        await pipeline._build_agent(agent_config, session_cache, extra_tools=[tool])
++        assert generic.call_args.kwargs["tools"] == [tool]
++        await pipeline._build_agent(agent_config, session_cache)
++        assert generic.call_args.kwargs["tools"] == []
+diff --git a/voice_telephony_flow.md b/voice_telephony_flow.md
+index 1a62268..2339a1b 100644
+--- a/voice_telephony_flow.md
++++ b/voice_telephony_flow.md
+@@ -662,6 +662,15 @@ To make telephony work reliably:
+   paused or foreign number gets a 404. No `key` is needed: the uuid is the access control. The caller ID
+   (`From`) is given to the agent as an unverified hint (`caller_context.py`) and is not sent to tool servers
+   as the user's identity.
++- **Handover to a person** (agent tool `transfer_to_human`, phone calls on a registered number only): the
++  number's binding config carries `handover` (staff number, optional hours, ring seconds), set in the console.
++  When the agent calls the tool inside staff hours, matrix lets it finish saying it is connecting the caller,
++  then calls Vobiz's Transfer API (`POST {VOBIZ_API_BASE_URL}/Account/{auth_id}/Call/{call_uuid}/`, default
++  base `https://api.vobiz.ai/api/v1`) pointing the caller's leg at `POST /voice/transfer/{session_id}`, which
++  returns a `<Dial>` to the staff phone (caller ID = the dialled Vobiz number). When the Dial ends Vobiz posts
++  to `/voice/transfer-result/{session_id}`: `completed` hangs up, anything else plays a short English
++  apology. Both URLs carry a signed 10-minute token; the feature is off unless `VOICE_TELEPHONY_SECRET`,
++  `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` and `HOST` are set. See `med_assist/service/voice/handover*.py`.
+ - **Env vars**:
+   - `VOBIZ_AUTH_ID`
+   - `VOBIZ_AUTH_TOKEN`
+-- 
+2.43.0
+

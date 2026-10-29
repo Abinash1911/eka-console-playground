@@ -662,6 +662,15 @@ To make telephony work reliably:
   paused or foreign number gets a 404. No `key` is needed: the uuid is the access control. The caller ID
   (`From`) is given to the agent as an unverified hint (`caller_context.py`) and is not sent to tool servers
   as the user's identity.
+- **Handover to a person** (agent tool `transfer_to_human`, phone calls on a registered number only): the
+  number's binding config carries `handover` (staff number, optional hours, ring seconds), set in the console.
+  When the agent calls the tool inside staff hours, matrix lets it finish saying it is connecting the caller,
+  then calls Vobiz's Transfer API (`POST {VOBIZ_API_BASE_URL}/Account/{auth_id}/Call/{call_uuid}/`, default
+  base `https://api.vobiz.ai/api/v1`) pointing the caller's leg at `POST /voice/transfer/{session_id}`, which
+  returns a `<Dial>` to the staff phone (caller ID = the dialled Vobiz number). When the Dial ends Vobiz posts
+  to `/voice/transfer-result/{session_id}`: `completed` hangs up, anything else plays a short English
+  apology. Both URLs carry a signed 10-minute token; the feature is off unless `VOICE_TELEPHONY_SECRET`,
+  `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` and `HOST` are set. See `med_assist/service/voice/handover*.py`.
 - **Env vars**:
   - `VOBIZ_AUTH_ID`
   - `VOBIZ_AUTH_TOKEN`

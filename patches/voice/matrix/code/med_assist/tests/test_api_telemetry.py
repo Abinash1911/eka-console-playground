@@ -487,6 +487,8 @@ _OUTCOME_IN_HELPER = {
     "chat_stream": "generate",
     "vobiz_answer": "_answer_call",
     "vobiz_answer_for_number": "_answer_call",
+    "vobiz_transfer": "_require_transfer_token",
+    "vobiz_transfer_result": "_require_transfer_token",
 }
 
 _SUCCESS_MARKERS = (

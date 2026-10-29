@@ -29,7 +29,7 @@ from common.utils.exceptions import (
 from med_assist.models.schemas.session import CreateSessionRequest
 from med_assist.service.auth.tokens.access import parse_authenticated_request
 from med_assist.service.manage_session import create_session, get_session, owns_session
-from med_assist.service.voice import telephony_auth, telephony_binding
+from med_assist.service.voice import handover, telephony_auth, telephony_binding
 from med_assist.service.voice.twilio_ice import get_ice_servers_payload
 from med_assist.service.voice.webrtc_signaling import handle_webrtc_offer
 from med_assist.utils.agent_config_utils import get_agent_runtime_config
@@ -38,6 +38,11 @@ from med_assist.utils.session_utils import get_session_from_cache
 
 logger = get_logger("med_assist.router.voice")
 router = APIRouter()
+
+# Vobiz: a Hangup as the first element rejects the call without answering (or billing) it.
+REJECT_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<Response>\n    <Hangup reason="rejected"/>\n</Response>'
+)
 
 #! SECURITY
 # /answer is guarded by a shared secret (?key=) and hands Vobiz a signed, short-lived WS token — see
@@ -145,7 +150,8 @@ async def vobiz_answer_for_number(
     The agent is not named in the URL: it is whichever agent the number is
     bound to (see telephony_binding.py), so the console can re-point or pause a
     number without touching Vobiz. The integration uuid is the access control.
-    An unknown, unbound, paused or foreign number gets a 404 and no session.
+    An unknown, unbound, paused or foreign number gets a Hangup (rejected, so it
+    is not billed) and no session; the reason is only in the logs.
 
     Configure the answer URL in Vobiz as (the console shows it on the number's page):
         https://<host>/reloaded/med-assist/voice/answer/<integration_uuid>
@@ -158,15 +164,19 @@ async def vobiz_answer_for_number(
             fn="vobiz_answer_for_number",
             integration_uuid=integration_uuid,
             reason=not_served.reason,
-            resp_code=404,
+            resp_code=200,
         )
-        raise HTTPException(status_code=404, detail="Not found")
+        return Response(content=REJECT_XML, media_type="application/xml")
     bind_request_context(agent_id=agent_id)
-    return await _answer_call(agent_id, From, To, CallUUID)
+    return await _answer_call(agent_id, From, To, CallUUID, integration_uuid=integration_uuid)
 
 
 async def _answer_call(
-    agent_id: str, From: Optional[str], To: Optional[str], CallUUID: Optional[str]
+    agent_id: str,
+    From: Optional[str],
+    To: Optional[str],
+    CallUUID: Optional[str],
+    integration_uuid: Optional[str] = None,
 ) -> Response:
     """Create the session for an answered call and return the XML that opens the audio stream."""
     session_id = None
@@ -207,6 +217,8 @@ async def _answer_call(
                 "caller": From,
                 "callee": To,
                 "call_uuid": CallUUID,
+                # Which registered number this is, so the call can look up its handover settings.
+                **({"integration_uuid": integration_uuid} if integration_uuid else {}),
             },
             referer="vobiz-telephony",
         )
@@ -289,6 +301,82 @@ async def _answer_call(
             exc_info=True,
         )
         raise HTTPException(status_code=500, detail="Failed to generate answer XML")
+
+
+def _require_transfer_token(session_id: str, token: str) -> None:
+    """Only a transfer URL this server signed for this session may be used (and only when signing is on)."""
+    if telephony_auth.is_enforced() and telephony_auth.verify_ws_token(
+        session_id, token, purpose=handover.TRANSFER_PURPOSE
+    ):
+        return
+    logger.warning(
+        "Transfer request rejected",
+        fn="_require_transfer_token",
+        sid=session_id,
+        error="bad token, or VOICE_TELEPHONY_SECRET not set",
+        resp_code=403,
+    )
+    raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@router.post("/transfer/{session_id}")
+async def vobiz_transfer(session_id: str, token: str = Query("")):
+    """
+    The XML Vobiz runs after a call is transferred: ring the staff phone.
+
+    Vobiz fetches this from the URL we gave its Transfer API (see handover.py).
+    The signed token is the access control; the staff number only goes to a
+    request that carries one.
+    """
+    bind_request_context(session_id=session_id)
+    _require_transfer_token(session_id, token)
+    try:
+        session_cache = await get_session_from_cache(session_id)
+    except SessionNotFound:
+        logger.warning(
+            "Transfer — session not found",
+            fn="vobiz_transfer",
+            sid=session_id,
+            error="session not found",
+            resp_code=404,
+        )
+        raise HTTPException(status_code=404, detail="Session not found")
+    bind_request_context(agent_id=session_cache.agent_id, wid=session_cache.wid)
+    settings = await handover.settings_for_session(session_cache)
+    if settings is None:
+        logger.warning(
+            "Transfer — no handover configured",
+            fn="vobiz_transfer",
+            sid=session_id,
+            error="no handover settings for this number",
+            resp_code=404,
+        )
+        raise HTTPException(status_code=404, detail="Not found")
+    callee = handover.context_of(session_cache).get("callee")
+    logger.info("Transfer XML served", fn="vobiz_transfer", sid=session_id, resp_code=200)
+    return Response(
+        content=handover.transfer_xml(settings, session_id, callee), media_type="application/xml"
+    )
+
+
+@router.post("/transfer-result/{session_id}")
+async def vobiz_transfer_result(
+    session_id: str,
+    token: str = Query(""),
+    # Vobiz posts the final Dial result as form fields
+    DialStatus: Optional[str] = Form(None),
+):
+    """What Vobiz does when the Dial to staff ends: hang up if they spoke, else apologise."""
+    bind_request_context(session_id=session_id)
+    _require_transfer_token(session_id, token)
+    logger.info(
+        "Transfer result served",
+        fn="vobiz_transfer_result",
+        sid=session_id,
+        dial_status=DialStatus,
+        resp_code=200,
+    )
+    return Response(content=handover.result_xml(DialStatus), media_type="application/xml")
 
 
 @router.get("/ice-servers")

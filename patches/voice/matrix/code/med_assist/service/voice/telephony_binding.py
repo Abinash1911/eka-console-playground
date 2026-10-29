@@ -19,6 +19,8 @@ from uuid import UUID
 from echo_agents.utils.pg_wrapper import get_pg_client
 
 from common.utils import get_logger
+from med_assist.service.voice import handover_settings
+from med_assist.service.voice.handover_settings import HandoverSettings
 
 logger = get_logger("med_assist.service.voice.telephony_binding")
 
@@ -29,7 +31,7 @@ PRODUCT = "agent"
 # One row per number: LEFT JOIN so "registered but not bound" is told apart from "unknown".
 _SQL = (
     "SELECT i.workspace_id, i.channel, i.provider, i.is_active, i.archived_at, "
-    "       p.product, p.product_id, p.is_active AS binding_active "
+    "       p.product, p.product_id, p.is_active AS binding_active, p.config "
     "FROM integrations i "
     "LEFT JOIN product_integrations p ON p.integration_id = i.id "
     "WHERE i.uuid = $1"
@@ -52,8 +54,8 @@ def _workspace_of(agent_id: str) -> Optional[str]:
         return None
 
 
-async def agent_for_number(integration_uuid: str) -> str:
-    """The agent id bound to this number, or raise ``NumberNotServed``."""
+async def _serving_row(integration_uuid: str) -> dict:
+    """The number's row if an agent should answer it, else raise ``NumberNotServed``."""
     try:
         number_uuid = UUID(integration_uuid)
     except ValueError:
@@ -73,9 +75,22 @@ async def agent_for_number(integration_uuid: str) -> str:
     if not row["binding_active"]:
         raise NumberNotServed("binding is paused")
 
-    agent_id = row["product_id"]
     # The binding API does not check that the agent belongs to the number's
     # workspace, so check it here: a number must never open another workspace's agent.
-    if _workspace_of(agent_id) != row["workspace_id"]:
+    if _workspace_of(row["product_id"]) != row["workspace_id"]:
         raise NumberNotServed("agent belongs to another workspace")
-    return agent_id
+    return row
+
+
+async def agent_for_number(integration_uuid: str) -> str:
+    """The agent id bound to this number, or raise ``NumberNotServed``."""
+    return (await _serving_row(integration_uuid))["product_id"]
+
+
+async def handover_for_number(integration_uuid: str) -> Optional[HandoverSettings]:
+    """Where this number's calls can be handed to a person, or None (not configured, or not served)."""
+    try:
+        row = await _serving_row(integration_uuid)
+    except NumberNotServed:
+        return None
+    return handover_settings.from_binding_config(row["config"])

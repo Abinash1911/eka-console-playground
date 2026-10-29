@@ -51,8 +51,10 @@ from med_assist.config.voice import (
 from med_assist.config.websocket import IncomingEventType
 from med_assist.models.agent_config import AgentRuntimeConfig, VoiceAgentConfig
 from med_assist.models.session import SessionCache
-from med_assist.service.voice import caller_context
+from med_assist.service.voice import caller_context, handover
 from med_assist.service.voice.agent_processor import EchoAgentProcessor, _ist_now
+from med_assist.service.voice.handover_processor import HandoverProcessor
+from med_assist.service.voice.handover_tool import HandoverState, TransferToHumanTool
 from med_assist.service.voice.providers import create_stt_service, create_tts_service
 from med_assist.service.voice.user_mute_strategies import (
     EchoTailMuteStrategy,
@@ -83,11 +85,13 @@ async def _build_agent(
     agent_config: AgentRuntimeConfig,
     session_cache: SessionCache,
     caller_id: Optional[str] = None,
+    extra_tools: Optional[list] = None,
 ) -> GenericAgent:
     """Build a GenericAgent with tools, reusing the same logic as agent_service.
 
     ``caller_id`` is the phone network's caller ID (phone pipeline only), shown
     to the agent as an unverified hint when no signed-in user supplies a mobile.
+    ``extra_tools`` are added to the agent's tools (the phone pipeline's handover tool).
     """
     echo_prompt = await get_echo_agent_prompt(agent_config.prompt_config)
 
@@ -177,6 +181,8 @@ async def _build_agent(
         custom_tools = await get_custom_tools(agent_config.custom_tools)
         tools.extend(list(custom_tools.values()))
 
+    tools.extend(extra_tools or [])
+
     if agent_config.primary_llm_config:
         logger.info(
             "Voice LLM",
@@ -253,8 +259,19 @@ async def run_voice_ws_pipeline(
         # )
 
         # 5. Build the GenericAgent
+        # Handover to a person is offered only when the number has it configured and
+        # everything it needs is set (handover.offer_for_call logs what is missing).
+        handover_offer = await handover.offer_for_call(session_cache, call_id)
+        handover_state = HandoverState()
         agent = await _build_agent(
-            agent_config, session_cache, caller_id=caller_context.caller_number(session_cache)
+            agent_config,
+            session_cache,
+            caller_id=caller_context.caller_number(session_cache),
+            extra_tools=(
+                [TransferToHumanTool(handover_offer.settings, handover_state, session_id)]
+                if handover_offer
+                else None
+            ),
         )
         # logger.info("Agent built", fn="run_voice_ws_pipeline", sid=session_id)
 
@@ -325,6 +342,11 @@ async def run_voice_ws_pipeline(
                 stt,
                 user_aggregator,
                 agent_processor,
+                *(
+                    [HandoverProcessor(handover_state, handover_offer.transfer, session_id)]
+                    if handover_offer
+                    else []
+                ),
                 tts,
                 transport.output(),
                 assistant_aggregator,

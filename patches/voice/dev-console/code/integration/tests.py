@@ -195,3 +195,64 @@ class TelephonyAnswerUrlTests(SimpleTestCase):
         from integration import webhooks
 
         self.assertNotIn("vobiz", webhooks.PROGRAMMABLE_PROVIDERS)
+
+
+class AgentHandoverConfigTests(SimpleTestCase):
+    def _validate(self, config):
+        from integration.schemas import products
+
+        return products.validate("agent", config)
+
+    def test_staff_number_is_normalised_and_the_rest_defaults(self):
+        config = self._validate({"handover": {"number": "+91 99999-11111"}})
+        self.assertEqual(
+            config["handover"], {"number": "+919999911111", "hours": None, "ring_seconds": 30}
+        )
+
+    def test_hours_can_run_overnight_but_not_be_empty(self):
+        config = self._validate({
+            "handover": {"number": "+919999911111", "hours": {"start": "22:00", "end": "06:00"}}
+        })
+        self.assertEqual(config["handover"]["hours"]["timezone"], "Asia/Kolkata")
+        with self.assertRaises(ValidationError):
+            self._validate({
+                "handover": {"number": "+919999911111", "hours": {"start": "09:00", "end": "09:00"}}
+            })
+
+    def test_bad_values_are_rejected(self):
+        number = "+919999911111"
+        bad = [
+            {"number": "99999"},
+            {"number": number, "ring_seconds": 5},
+            {"number": number, "ring_seconds": 61},
+            {"number": number, "hours": {"start": "9am", "end": "18:00"}},
+            {"number": number, "hours": {"start": "09:00", "end": "25:00"}},
+            {"number": number, "hours": {"start": "09:00", "end": "18:00", "timezone": "Mars/Base"}},
+            {"number": number, "ring_to": "+911111111111"},
+        ]
+        for handover in bad:
+            with self.assertRaises(ValidationError, msg=handover):
+                self._validate({"handover": handover})
+
+    def test_the_status_callback_still_works_alongside_it(self):
+        config = self._validate({
+            "status": {"url": "https://example.com/status"},
+            "handover": {"number": "+919999911111"},
+        })
+        self.assertEqual(config["status"]["url"], "https://example.com/status")
+
+    def test_a_binding_request_carries_it(self):
+        from uuid import uuid4
+
+        from integration.schemas.requests import CreateProductIntegrationRequest
+
+        req = CreateProductIntegrationRequest.model_validate({
+            "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
+            "config": {"handover": {"number": "+91 99999 11111"}},
+        })
+        self.assertEqual(req.config["handover"]["number"], "+91 99999 11111")  # raw; normalised on save
+        with self.assertRaises(ValidationError):
+            CreateProductIntegrationRequest.model_validate({
+                "product": "agent", "product_id": "agent-1", "integration": str(uuid4()),
+                "config": {"handover": {"number": "nope"}},
+            })

@@ -34,6 +34,9 @@ logger = get_logger("med_assist.service.voice.telephony_auth")
 # length call still works, and the token is useless for a different session.
 WS_TOKEN_TTL_SECS = 600
 
+# What a token opens. "ws" is the audio socket; other doors name themselves.
+WS_PURPOSE = "ws"
+
 
 def _secret() -> Optional[bytes]:
     secret = get_config_value("VOICE_TELEPHONY_SECRET")
@@ -61,21 +64,31 @@ def answer_key_ok(key: Optional[str]) -> bool:
     return bool(key) and hmac.compare_digest(key.encode(), secret)
 
 
-def _mac(secret: bytes, session_id: str, expires_at: int) -> str:
-    return hmac.new(secret, f"{session_id}.{expires_at}".encode(), hashlib.sha256).hexdigest()
+def _mac(secret: bytes, purpose: str, session_id: str, expires_at: int) -> str:
+    return hmac.new(
+        secret, f"{purpose}.{session_id}.{expires_at}".encode(), hashlib.sha256
+    ).hexdigest()
 
 
-def sign_ws_token(session_id: str, now: Optional[float] = None) -> str:
-    """``<expiry>.<mac>`` for this session, or "" when no secret is configured."""
+def sign_ws_token(session_id: str, purpose: str = WS_PURPOSE, now: Optional[float] = None) -> str:
+    """``<expiry>.<mac>`` for this session and purpose, or "" when no secret is configured.
+
+    The purpose is part of what is signed, so a token made for one door never opens another.
+    """
     secret = _secret()
     if secret is None:
         return ""
     expires_at = int((time.time() if now is None else now) + WS_TOKEN_TTL_SECS)
-    return f"{expires_at}.{_mac(secret, session_id, expires_at)}"
+    return f"{expires_at}.{_mac(secret, purpose, session_id, expires_at)}"
 
 
-def verify_ws_token(session_id: str, token: Optional[str], now: Optional[float] = None) -> bool:
-    """True for a valid, unexpired token for this session (or when none is configured)."""
+def verify_ws_token(
+    session_id: str,
+    token: Optional[str],
+    purpose: str = WS_PURPOSE,
+    now: Optional[float] = None,
+) -> bool:
+    """True for a valid, unexpired token for this session and purpose (or when none is configured)."""
     secret = _secret()
     if secret is None:
         return True
@@ -87,4 +100,4 @@ def verify_ws_token(session_id: str, token: Optional[str], now: Optional[float] 
     if expires_at < (time.time() if now is None else now):
         return False
     # Bytes, not str: compare_digest raises on non-ASCII text, and the token is attacker-supplied.
-    return hmac.compare_digest(mac.encode(), _mac(secret, session_id, expires_at).encode())
+    return hmac.compare_digest(mac.encode(), _mac(secret, purpose, session_id, expires_at).encode())
