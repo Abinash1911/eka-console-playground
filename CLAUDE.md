@@ -14,7 +14,7 @@ The user is a product manager, not an engineer. Goal: build features in the real
 
 ## Never without being asked
 - Never push to `main` of a company repo. Never open a PR unless the user explicitly says to raise one.
-- Build in private copies and deliver patches/zips until told to push.
+- Build in private copies and deliver patches/zips until told to push. Patches are stored in this repo under `patches/<feature>/` (never copies of company repos); see `patches/README.md`.
 - When told to push: new branch only, never touch someone else's branch (for example `feature/life-3141` holds another developer's work), never rewrite history on branches that are not ours.
 - Never ask the user to paste secrets into chat. Credentials go in the environment's secret settings.
 - Hook warnings about bot commits (github-actions) are not ours; do not amend them.
