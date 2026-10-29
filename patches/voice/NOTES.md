@@ -56,7 +56,7 @@ Two repos. Order to deploy: console (2a) first, then matrix (2b). Matrix patches
 - New `POST /voice/answer/{integration_uuid}`; the legacy `?agent_id=` route stays. The handler is split so both share `_answer_call`.
 - `telephony_binding.py` reads `integrations` + `product_integrations` from the Postgres matrix already reads. a rejecting Hangup (`<Hangup reason="rejected"/>`, which Vobiz documents as not billed) and no session for: malformed or unknown uuid, not a vobiz telephony number, inactive or archived number, not bound, bound to another product, paused binding, or an agent from another workspace.
 - Caller ID: the number `/answer` already saved is given to the agent on phone calls as an unverified hint (`caller_context.py`). Validated as E.164, read only for sessions `/answer` created (WebRTC context is client-supplied and never read), never sent to tool servers as identity (`partner_mobile` stays None), and a signed-in user's mobile still wins.
-- Tests: 50 new tests across patches 1 and 2b (51 once patch 1's token-purpose test is counted). Whole suite 674 passed; the same 14 failed and 4 errors as clean `main`, 0 new. Deliberately breaking the workspace check, the channel/format check and the partner-mobile rule each makes tests fail.
+- Tests: 51 new tests across patches 1 and 2b (23 + 28). Whole suite 674 passed; the same 14 failed and 4 errors as clean `main`, 0 new. Deliberately breaking the workspace check, the channel/format check and the partner-mobile rule each makes tests fail.
 - Not tested: the SQL against a real database (column names read from the console's models and migrations: `integrations.uuid/workspace_id/channel/provider/is_active/archived_at`, `product_integrations.integration_id/product/product_id/is_active`), a real Vobiz call.
 
 ### For reviewers to decide
@@ -76,7 +76,7 @@ Vobiz facts used (read from Vobiz's own docs on 2026-10-29, not search summaries
 ### 3a. dev-console: `patches/voice/dev-console/0002-*.patch`
 - Agent binding `config` accepts `handover`: `number` (E.164, normalised), optional `hours` (`start`, `end`, `timezone`; start after end = overnight), `ring_seconds` 10 to 60. It lives on the binding config because matrix reads it from the shared Postgres and cannot decrypt the number's credentials.
 - Phone-number rules moved to `integration/schemas/phone.py`, shared with the Vobiz schema.
-- 22 integration tests pass (13 from patch 2a, 5 new here, 4 counted twice in the overlap with the earlier set: 17 before + 5). Removing the change fails 4 of them.
+- 22 integration tests pass: 8 that were already there, 9 from patch 2a, 5 new here. Removing this change fails 4 of the new ones.
 - No console form yet (patch 4); the binding API accepts it today.
 
 ### 3b. matrix: `patches/voice/matrix/0003-*.patch`
@@ -84,7 +84,7 @@ Vobiz facts used (read from Vobiz's own docs on 2026-10-29, not search summaries
 - `HandoverProcessor` (between agent and text-to-speech) waits for the agent's reply to end and the caller to have heard it (plus a 0.5 s settle so a pause between sentences does not count), then calls Vobiz's Transfer API. A timer (8 s) covers a silent reply. If Vobiz refuses, the caller hears "Sorry, I could not connect you right now" and the agent can offer it again.
 - `POST /voice/transfer/{session_id}` returns the `<Dial>` to the staff phone; `POST /voice/transfer-result/{session_id}` hangs up on `completed` and otherwise plays a short English apology. Both need a signed token with the `transfer` purpose.
 - Off unless `VOICE_TELEPHONY_SECRET`, `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` and `HOST` are set (the transfer URL returns the staff number). The reason it is off is logged on each call. The legacy `?agent_id=` answer URL records no number, so it offers no handover.
-- Tests: 56 new in `test_voice_handover.py`. Whole suite: 730 passed; the same 14 failed and 4 errors as clean `main`, 0 new. Six deliberate breakages (no hours check, transfer before the reply ends, transfer URL open without the secret, no Vobiz auth headers, unvalidated caller ID in the XML, leftover timer after a refusal) each fail a test.
+- Tests: 56 new in `test_voice_handover.py` (107 new across the three matrix patches). Whole suite: 730 passed (623 on clean `main` plus 107); the same 14 failed and 4 errors as clean `main`, 0 new. Six deliberate breakages (no hours check, transfer before the reply ends, transfer URL open without the secret, no Vobiz auth headers, unvalidated caller ID in the XML, leftover timer after a refusal) each fail a test.
 
 Not tested: a real Vobiz call or real audio. In particular that Vobiz really interrupts the stream and lets the audio socket close cleanly, that `BotStoppedSpeakingFrame` and `LLMFullResponseEndFrame` arrive in the order assumed on a live pipeline, and what the caller hears during the hand-off (ringback is Vobiz's `dialMusic` default `real`).
 
