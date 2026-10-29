@@ -164,6 +164,6 @@ What it shows (phone numbers only, on the Setup tab)
 - When ready: a "Call +91..." tap-to-call link (the clinic's public number if it forwards here, which tests the whole route; otherwise the dialled number), and four things to check on the call, ending with the Calls tab.
 - Always: a note that the console cannot check Vobiz (Answer URL pasted?) or the platform's phone settings.
 
-Checked: 62 integration tests pass without a database (3 more tests than patch 5b: 5 new card tests, 2 earlier presenter tests already counted). Two deliberate breakages (ready ignoring a paused connection; call link shown when not ready) each fail a test. Rendered from the real template in a browser, desktop and 390 px wide, no sideways scroll. Series applies on clean `main` (`ee3198d`).
+Checked: 62 integration tests pass without a database (5 new, for this card). Two deliberate breakages (ready ignoring a paused connection; call link shown when not ready) each fail a test. Rendered from the real template in a browser, desktop and 390 px wide, no sideways scroll. Series applies on clean `main` (`ee3198d`).
 
 Not tested: a real call, and `tel:` links on a real phone.
