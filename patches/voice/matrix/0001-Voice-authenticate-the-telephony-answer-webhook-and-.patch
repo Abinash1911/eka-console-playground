@@ -1,0 +1,474 @@
+From 2d47bdb37759a717b61dea40fe1a5a118f04aa98 Mon Sep 17 00:00:00 2001
+From: Abinash Haldorai <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 17:57:34 +0000
+Subject: [PATCH] Voice: authenticate the telephony answer webhook and audio
+ socket
+
+/voice/answer was open to anyone who knew an agent id, and the Vobiz
+audio WebSocket authenticated on session existence alone (the token was
+accepted and ignored), so anyone who learned a session id could attach.
+
+Add a shared secret, VOICE_TELEPHONY_SECRET in the MATRIX config:
+- /answer requires ?key=<secret> (403 otherwise) and returns a WebSocket
+  URL carrying a short-lived HMAC token bound to the new session id;
+- the WebSocket checks that token before looking up the session and
+  closes with 4001 if it is missing, wrong, expired or for another
+  session.
+
+Nothing is enforced until the secret is set, so deploying this changes
+nothing by itself; a warning is logged on each call while it is unset.
+Update the Vobiz answer URL before setting the secret.
+
+Not tested against a live Vobiz account: unit tests cover the module,
+the answer route and the socket gate with mocks.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ med_assist/router/voice.py                    |  30 ++-
+ med_assist/router/voice_ws.py                 |  27 ++-
+ med_assist/service/voice/telephony_auth.py    |  90 +++++++++
+ med_assist/tests/test_voice_telephony_auth.py | 179 ++++++++++++++++++
+ voice_telephony_flow.md                       |   5 +
+ 5 files changed, 313 insertions(+), 18 deletions(-)
+ create mode 100644 med_assist/service/voice/telephony_auth.py
+ create mode 100644 med_assist/tests/test_voice_telephony_auth.py
+
+diff --git a/med_assist/router/voice.py b/med_assist/router/voice.py
+index aa4fd66..1cecade 100644
+--- a/med_assist/router/voice.py
++++ b/med_assist/router/voice.py
+@@ -29,6 +29,7 @@ from common.utils.exceptions import (
+ from med_assist.models.schemas.session import CreateSessionRequest
+ from med_assist.service.auth.tokens.access import parse_authenticated_request
+ from med_assist.service.manage_session import create_session, get_session, owns_session
++from med_assist.service.voice import telephony_auth
+ from med_assist.service.voice.twilio_ice import get_ice_servers_payload
+ from med_assist.service.voice.webrtc_signaling import handle_webrtc_offer
+ from med_assist.utils.agent_config_utils import get_agent_runtime_config
+@@ -39,8 +40,9 @@ logger = get_logger("med_assist.router.voice")
+ router = APIRouter()
+ 
+ #! SECURITY
+-# 1. /answer is unauthenticated (the HIGH item from the original audit). agent_id comes from a query param (forgeable), no Vobiz signature / shared secret / IP allow-list. Anyone who knows the URL + any valid agent_id
+-# can mint sessions and get a working WS URL + token. Telephony webhooks should be authenticated — add a Vobiz signature check or source-IP allow-list. This is the one worth fixing.
++# /answer is guarded by a shared secret (?key=) and hands Vobiz a signed, short-lived WS token — see
++# med_assist/service/voice/telephony_auth.py. Both apply only once VOICE_TELEPHONY_SECRET is set; until then
++# /answer is open (agent_id is a forgeable query param) and a warning is logged on every call.
+ 
+ 
+ @router.post("/offer")
+@@ -101,6 +103,7 @@ async def webrtc_offer(
+ @router.post("/answer")
+ async def vobiz_answer(
+     agent_id: str = Query(..., description="Agent ID for this call"),
++    key: Optional[str] = Query(None, description="Shared secret set on the Vobiz answer URL"),
+     # Vobiz/Plivo sends these as form-encoded POST body
+     From: Optional[str] = Form(None),
+     To: Optional[str] = Form(None),
+@@ -113,11 +116,21 @@ async def vobiz_answer(
+     returns XML instructing Vobiz to open a bidirectional audio WebSocket stream.
+ 
+     Configure the answer URL in Vobiz as:
+-        https://<host>/reloaded/med-assist/voice/answer?agent_id=<id>&wid=<wid>
++        https://<host>/reloaded/med-assist/voice/answer?agent_id=<id>&wid=<wid>&key=<VOICE_TELEPHONY_SECRET>
+     """
+     session_id = None
+     bind_request_context(agent_id=agent_id)
+     try:
++        if not telephony_auth.answer_key_ok(key):
++            logger.warning(
++                "Vobiz answer rejected — bad or missing key",
++                fn="vobiz_answer",
++                agent_id=agent_id,
++                resp_code=403,
++            )
++            raise HTTPException(status_code=403, detail="Forbidden")
++        telephony_auth.warn_if_open()
++
+         # Validate agent exists
+         if not agent_id:
+             raise HTTPException(
+@@ -163,11 +176,10 @@ async def vobiz_answer(
+         )
+         session_id = session_response.session_id
+         bind_request_context(session_id=session_id)
+-        #TODO: BREAKING
+-        #HACK: VOBIZ TOKENS ARE NOT VALIDATED — the opaque session_token this
+-        # flow used is gone with the sess_token migration, and Vobiz has no
+-        # interactive auth path to mint one. The WS now authenticates on
+-        # session existence alone. Revisit if telephony is revived.
++        # Vobiz has no interactive auth path to mint a sess_token, so the WS is
++        # authenticated with a short-lived HMAC token for this session instead
++        # (empty, and not checked, until VOICE_TELEPHONY_SECRET is set).
++        ws_token = telephony_auth.sign_ws_token(session_id)
+ 
+         # Build WebSocket URL for Vobiz to connect to
+         public_url = get_config()["HOST"]
+@@ -180,6 +192,8 @@ async def vobiz_answer(
+             ws_base = ws_base.replace("matrix.eka.care", "matrix-ws.eka.care")
+ 
+         ws_url = f"{ws_base}/reloaded/ws/med-assist/voice/session/{session_id}/"
++        if ws_token:
++            ws_url += f"?token={ws_token}"
+ 
+         xml_response = (
+             '<?xml version="1.0" encoding="UTF-8"?>\n'
+diff --git a/med_assist/router/voice_ws.py b/med_assist/router/voice_ws.py
+index 33506b4..5c1e2d5 100644
+--- a/med_assist/router/voice_ws.py
++++ b/med_assist/router/voice_ws.py
+@@ -23,6 +23,7 @@ from med_assist.config.voice import (
+     VOICE_LLM_TEMPERATURE,
+ )
+ from med_assist.models.agent_config import EncryptedLLMConfig
++from med_assist.service.voice import telephony_auth
+ from med_assist.service.voice.pipeline import run_voice_ws_pipeline
+ from med_assist.utils.agent_config_utils import get_voice_config
+ from med_assist.utils.session_utils import get_runtime_config_from_session
+@@ -37,10 +38,11 @@ async def vobiz_voice_ws(websocket: WebSocket, session_id: str, token: str = "")
+     """
+     Vobiz telephony WebSocket endpoint.
+ 
+-    ``token`` is accepted but ignored — see the HACK note below.
++    ``token`` is the short-lived HMAC token /voice/answer put on the URL; it is
++    checked once VOICE_TELEPHONY_SECRET is set (see telephony_auth.py).
+ 
+     1. Accepts the WebSocket connection
+-    2. Validates that the session exists
++    2. Checks the token, then validates that the session exists
+     3. Fetches agent config and voice config
+     4. Runs the voice pipeline with FastAPIWebsocketTransport
+     """
+@@ -52,18 +54,23 @@ async def vobiz_voice_ws(websocket: WebSocket, session_id: str, token: str = "")
+         # Accept the WebSocket connection first (required by Vobiz protocol)
+         await websocket.accept()
+ 
++        # Vobiz has no interactive auth path to mint a sess_token, so the gate
++        # is the HMAC token /voice/answer signed for this session. Checked
++        # before the session is even looked up.
++        if not telephony_auth.verify_ws_token(session_id, token):
++            logger.warning(
++                "Vobiz voice WebSocket rejected — bad or expired token",
++                fn="vobiz_voice_ws",
++                sid=session_id,
++            )
++            await websocket.close(code=4001, reason="Unauthorized")
++            return
++        telephony_auth.warn_if_open()
++
+         # Validate session
+         session_cache = await get_session_from_cache(session_id)
+         bind_request_context(agent_id=session_cache.agent_id, wid=session_cache.wid)
+ 
+-        #TODO: BREAKING
+-        #HACK: VOBIZ TOKENS ARE NOT VALIDATED — the opaque session_token (and
+-        # its exp) were dropped from SessionCache in the sess_token migration,
+-        # and Vobiz has no interactive auth path to mint a sess_token. The only
+-        # gate left is that the session exists in cache, which is weak: anyone
+-        # who learns a session id can attach. Telephony is dormant; revisit
+-        # before reviving it.
+-
+         # Fetch agent config
+         agent_config = await get_runtime_config_from_session(session_cache)
+ 
+diff --git a/med_assist/service/voice/telephony_auth.py b/med_assist/service/voice/telephony_auth.py
+new file mode 100644
+index 0000000..1da9012
+--- /dev/null
++++ b/med_assist/service/voice/telephony_auth.py
+@@ -0,0 +1,90 @@
++"""
++Authentication for the Vobiz telephony entry points.
++
++Two doors, both reachable from the open internet:
++
++- the answer webhook (``POST /voice/answer``), which creates a session, and
++- the audio WebSocket (``/voice/session/{session_id}/``), which runs the call.
++
++Vobiz cannot do an interactive login, so neither can carry a ``sess_token``.
++Instead, one shared secret (``VOICE_TELEPHONY_SECRET`` in the MATRIX config)
++guards both:
++
++- the answer URL configured in Vobiz carries the secret as ``?key=``, and
++- ``/answer`` hands Vobiz a WebSocket URL with a short-lived ``token`` that is
++  an HMAC of the session id, so only a session this server just minted can be
++  attached to.
++
++When the secret is not configured nothing is enforced and behaviour is exactly
++what it was before, so deploying this changes nothing until the secret is set
++and the Vobiz answer URL is updated. A logged warning says so.
++"""
++
++import hashlib
++import hmac
++import time
++from typing import Optional
++
++from common.config import get_config_value
++from common.utils import get_logger
++
++logger = get_logger("med_assist.service.voice.telephony_auth")
++
++# Matches MAX_CALL_DURATION_SECS in pipeline.py: a reconnect inside a maximum
++# length call still works, and the token is useless for a different session.
++WS_TOKEN_TTL_SECS = 600
++
++
++def _secret() -> Optional[bytes]:
++    secret = get_config_value("VOICE_TELEPHONY_SECRET")
++    return secret.encode() if secret else None
++
++
++def is_enforced() -> bool:
++    return _secret() is not None
++
++
++def warn_if_open() -> None:
++    """Say, once per call, that the telephony entry points are unauthenticated."""
++    if not is_enforced():
++        logger.warning(
++            "VOICE_TELEPHONY_SECRET not set — telephony answer and audio socket are unauthenticated",
++            fn="warn_if_open",
++        )
++
++
++def answer_key_ok(key: Optional[str]) -> bool:
++    """True when the ``key`` on the answer URL is the shared secret (or none is configured)."""
++    secret = _secret()
++    if secret is None:
++        return True
++    return bool(key) and hmac.compare_digest(key.encode(), secret)
++
++
++def _mac(secret: bytes, session_id: str, expires_at: int) -> str:
++    return hmac.new(secret, f"{session_id}.{expires_at}".encode(), hashlib.sha256).hexdigest()
++
++
++def sign_ws_token(session_id: str, now: Optional[float] = None) -> str:
++    """``<expiry>.<mac>`` for this session, or "" when no secret is configured."""
++    secret = _secret()
++    if secret is None:
++        return ""
++    expires_at = int((time.time() if now is None else now) + WS_TOKEN_TTL_SECS)
++    return f"{expires_at}.{_mac(secret, session_id, expires_at)}"
++
++
++def verify_ws_token(session_id: str, token: Optional[str], now: Optional[float] = None) -> bool:
++    """True for a valid, unexpired token for this session (or when none is configured)."""
++    secret = _secret()
++    if secret is None:
++        return True
++    try:
++        expiry_part, mac = (token or "").split(".", 1)
++        expires_at = int(expiry_part)
++    except ValueError:
++        return False
++    if expires_at < (time.time() if now is None else now):
++        return False
++    # Bytes, not str: compare_digest raises on non-ASCII text, and the token is attacker-supplied.
++    return hmac.compare_digest(mac.encode(), _mac(secret, session_id, expires_at).encode())
+diff --git a/med_assist/tests/test_voice_telephony_auth.py b/med_assist/tests/test_voice_telephony_auth.py
+new file mode 100644
+index 0000000..a4183e2
+--- /dev/null
++++ b/med_assist/tests/test_voice_telephony_auth.py
+@@ -0,0 +1,179 @@
++import base64
++import re
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock, patch
++
++import pytest
++from fastapi import HTTPException
++
++from common.utils.exceptions import SessionNotFound
++from med_assist.service.voice import telephony_auth
++
++SECRET = "s3cret-value"
++AGENT_ID = base64.b64encode(b"agent-uuid#wsp_1").decode()
++
++
++def _configured(secret=SECRET):
++    return patch.object(
++        telephony_auth,
++        "get_config_value",
++        lambda key, default=None: secret if key == "VOICE_TELEPHONY_SECRET" else default,
++    )
++
++
++class TestAnswerKey:
++    def test_open_when_no_secret_is_configured(self):
++        with _configured(None):
++            assert telephony_auth.is_enforced() is False
++            assert telephony_auth.answer_key_ok(None) is True
++            assert telephony_auth.answer_key_ok("anything") is True
++
++    def test_requires_the_exact_key_when_configured(self):
++        with _configured():
++            assert telephony_auth.is_enforced() is True
++            assert telephony_auth.answer_key_ok(SECRET) is True
++            assert telephony_auth.answer_key_ok(None) is False
++            assert telephony_auth.answer_key_ok("") is False
++            assert telephony_auth.answer_key_ok(SECRET + "x") is False
++
++
++class TestWsToken:
++    def test_round_trip(self):
++        with _configured():
++            token = telephony_auth.sign_ws_token("sess-1", now=1000)
++            assert telephony_auth.verify_ws_token("sess-1", token, now=1001) is True
++
++    def test_bound_to_its_session(self):
++        with _configured():
++            token = telephony_auth.sign_ws_token("sess-1", now=1000)
++            assert telephony_auth.verify_ws_token("sess-2", token, now=1001) is False
++
++    def test_expires(self):
++        with _configured():
++            token = telephony_auth.sign_ws_token("sess-1", now=1000)
++            last_ok = 1000 + telephony_auth.WS_TOKEN_TTL_SECS
++            assert telephony_auth.verify_ws_token("sess-1", token, now=last_ok) is True
++            assert telephony_auth.verify_ws_token("sess-1", token, now=last_ok + 1) is False
++
++    def test_tampered_expiry_or_mac_is_refused(self):
++        with _configured():
++            expires_at, mac = telephony_auth.sign_ws_token("sess-1", now=1000).split(".")
++            later = f"{int(expires_at) + 9999}.{mac}"
++            assert telephony_auth.verify_ws_token("sess-1", later, now=1001) is False
++            assert (
++                telephony_auth.verify_ws_token("sess-1", f"{expires_at}.{'0' * 64}", now=1001)
++                is False
++            )
++
++    @pytest.mark.parametrize("token", [None, "", "no-dot", "abc.def", "123.", "9999999999.é"])
++    def test_malformed_tokens_are_refused(self, token):
++        with _configured():
++            assert telephony_auth.verify_ws_token("sess-1", token, now=1000) is False
++
++    def test_a_token_signed_with_another_secret_is_refused(self):
++        with _configured("other"):
++            token = telephony_auth.sign_ws_token("sess-1", now=1000)
++        with _configured():
++            assert telephony_auth.verify_ws_token("sess-1", token, now=1001) is False
++
++    def test_not_signed_and_not_checked_without_a_secret(self):
++        with _configured(None):
++            assert telephony_auth.sign_ws_token("sess-1") == ""
++            assert telephony_auth.verify_ws_token("sess-1", None) is True
++
++
++async def _answer(key=None):
++    from med_assist.router.voice import vobiz_answer
++
++    create = AsyncMock(return_value=SimpleNamespace(session_id="sess-1"))
++    with (
++        patch("med_assist.router.voice.create_session", create),
++        patch("med_assist.router.voice.get_config", lambda: {"HOST": "https://matrix.eka.care"}),
++    ):
++        try:
++            response = await vobiz_answer(
++                agent_id=AGENT_ID,
++                key=key,
++                From="+919876543210",
++                To="+911234567890",
++                CallUUID="call-1",
++            )
++        except HTTPException as exc:
++            return exc, create
++    return response, create
++
++
++@pytest.mark.asyncio
++class TestAnswerEndpoint:
++    async def test_rejects_a_missing_key_before_creating_a_session(self):
++        with _configured():
++            exc, create = await _answer(key=None)
++        assert exc.status_code == 403
++        create.assert_not_awaited()
++
++    async def test_rejects_a_wrong_key(self):
++        with _configured():
++            exc, create = await _answer(key="wrong")
++        assert exc.status_code == 403
++        create.assert_not_awaited()
++
++    async def test_good_key_returns_a_signed_socket_url(self):
++        with _configured():
++            response, create = await _answer(key=SECRET)
++            create.assert_awaited_once()
++            body = response.body.decode()
++            url = re.search(r"<Stream[^>]*>([^<]+)</Stream>", body).group(1)
++            assert url.startswith(
++                "wss://matrix-ws.eka.care/reloaded/ws/med-assist/voice/session/sess-1/?token="
++            )
++            token = url.split("?token=")[1]
++            assert telephony_auth.verify_ws_token("sess-1", token) is True
++
++    async def test_unchanged_without_a_secret(self):
++        with _configured(None):
++            response, create = await _answer(key=None)
++        create.assert_awaited_once()
++        body = response.body.decode()
++        assert "?token=" not in body
++        assert "/reloaded/ws/med-assist/voice/session/sess-1/<" in body
++
++
++async def _connect(token):
++    from med_assist.router.voice_ws import vobiz_voice_ws
++
++    websocket = MagicMock()
++    websocket.accept = AsyncMock()
++    websocket.close = AsyncMock()
++    lookup = AsyncMock(side_effect=SessionNotFound())
++    with patch("med_assist.router.voice_ws.get_session_from_cache", lookup):
++        await vobiz_voice_ws(websocket, "sess-1", token=token)
++    return websocket, lookup
++
++
++@pytest.mark.asyncio
++class TestAudioSocket:
++    async def test_refuses_a_bad_token_before_looking_up_the_session(self):
++        with _configured():
++            websocket, lookup = await _connect("1.deadbeef")
++        websocket.close.assert_awaited_once()
++        assert websocket.close.await_args.kwargs["code"] == 4001
++        lookup.assert_not_awaited()
++
++    async def test_refuses_a_missing_token(self):
++        with _configured():
++            websocket, lookup = await _connect("")
++        assert websocket.close.await_args.kwargs["code"] == 4001
++        lookup.assert_not_awaited()
++
++    async def test_a_valid_token_passes_the_gate(self):
++        with _configured():
++            token = telephony_auth.sign_ws_token("sess-1")
++            websocket, lookup = await _connect(token)
++        lookup.assert_awaited_once_with("sess-1")
++        # Got as far as the session lookup (which this test makes fail with 4004).
++        assert websocket.close.await_args.kwargs["code"] == 4004
++
++    async def test_unchanged_without_a_secret(self):
++        with _configured(None):
++            _, lookup = await _connect("")
++        lookup.assert_awaited_once_with("sess-1")
+diff --git a/voice_telephony_flow.md b/voice_telephony_flow.md
+index d8da95d..e03cd40 100644
+--- a/voice_telephony_flow.md
++++ b/voice_telephony_flow.md
+@@ -650,6 +650,11 @@ To make telephony work reliably:
+ 
+ - **`MATRIX` config includes**:
+   - `HOST` (public URL) used to build WS URL in `/answer`
++  - `VOICE_TELEPHONY_SECRET` (optional): when set, `/answer` requires `&key=<secret>` on the answer URL
++    configured in Vobiz (403 otherwise) and puts a signed, 10-minute `?token=` on the WebSocket URL, which
++    the WebSocket checks (close code 4001 if bad). When unset, both are open as before and a warning is
++    logged on every call. See `med_assist/service/voice/telephony_auth.py`. Update the Vobiz answer URL
++    *before* setting the secret.
+ - **Env vars**:
+   - `VOBIZ_AUTH_ID`
+   - `VOBIZ_AUTH_TOKEN`
+-- 
+2.43.0
+
