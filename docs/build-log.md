@@ -101,3 +101,6 @@ Dev-console: provider tile + create form for a phone number, number page with An
 
 ## 2026-10-29: voice patch 5 built (Calls tab)
 Matrix 0004: calls are recorded as conversations with a masked-caller summary (duration, how it ended, handover outcome, tools). Console 0004: Setup | Calls tabs, table with outcome pills and totals, `console_index` always promotes `call` and `integration_uuid`. Matrix 747 passed (same 14 failed + 4 errors as clean main); console 59 pass without a database. Database tests (`list_calls`, ingest) are written but could not run in the sandbox (no MySQL/Postgres). Presenter bug caught by looking at the render: a call with no summary was labelled "Answered by agent"; now "Not recorded". Both series verified with `git am --3way` on clean main. Nothing pushed to company repos.
+
+## 2026-10-29: voice patch 6 built (Test this number card)
+Console only. Chose a readiness card with a tap-to-call link over a button that places a call (outbound calling and the browser voice path were both out of scope or a different path). 62 integration tests pass without a database; two breakages caught; rendered and looked at. Nothing pushed to company repos.

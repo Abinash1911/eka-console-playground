@@ -13,7 +13,7 @@ from agents.models import AgentConfig
 from core.constants import Product
 from core.logging import get_logger
 from console_index import reads as console_reads
-from integration import calls as call_rows, webhooks
+from integration import calls as call_rows, test_call, webhooks
 from integration.models import Integration, ProductIntegration
 from integration.schemas import products as product_configs
 from integration.schemas.products.utils import Callback
@@ -269,6 +269,15 @@ def _credential_rows(integ: Integration) -> list:
     ]
 
 
+def _test_call(integ: Integration, binding, agent) -> dict:
+    rows = test_call.checks(binding, agent)
+    return {
+        "checks": rows,
+        "ready": test_call.ready(rows),
+        "number": test_call.number_to_ring(integ.public_credentials()),
+    }
+
+
 def _binding_context(request, integ: Integration) -> dict:
     binding = ProductIntegration.objects.filter(integration=integ).first()
 
@@ -293,6 +302,7 @@ def _binding_context(request, integ: Integration) -> dict:
         "binding": binding,
         "is_phone": integ._channel == Integration.CHANNEL_TELEPHONY,
         "handover": _handover_form(binding),
+        "test_call": _test_call(integ, binding, bound_agent),
         "bound_agent": bound_agent,
         "agents": AgentConfig.objects.filter(
             workspace_id=request.workspace_id, is_active=True

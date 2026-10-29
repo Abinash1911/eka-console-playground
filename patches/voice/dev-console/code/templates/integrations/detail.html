@@ -116,6 +116,8 @@
         </div>
         {% endif %}
 
+        {% if is_phone %}{% include 'integrations/_phone_test.html' %}{% endif %}
+
         {% if integration.provider == 'interakt_tp' %}
         {% include 'integrations/_template_create.html' %}
         {% endif %}

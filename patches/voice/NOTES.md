@@ -15,6 +15,7 @@ Approved prototype: `docs/prototypes/prototype-phone-agent.html`. Read-state of 
 | 4 | Console pages: register a phone number, connect an agent, handover form (applies after 3a) | dev-console | `ee3198d` | built, rendered and checked in a browser, tested without a database, not pushed |
 | 5a | Record each call as a conversation with a summary (matrix, applies after 3b) | matrix | `2569ee4` | built, tested with mocks, not pushed |
 | 5b | Calls tab on the number's page (console, applies after 4) | dev-console | `ee3198d` | built, rendered in a browser; page tests run, database tests written but not run, not pushed |
+| 6 | "Test this number" card (console, applies after 5b) | dev-console | `ee3198d` | built, rendered in a browser, tested without a database, not pushed |
 
 ## Patch 1: authenticate the telephony answer webhook and audio socket (matrix)
 
@@ -151,3 +152,18 @@ For reviewers to decide
 - Browser (WebRTC) voice sessions are still not recorded in Conversations, the same gap as before.
 - No "resolved" or "booked" outcome: the agent cannot say whether the caller's goal was met.
 - `theme/static/css/dist/styles.css` is a tracked build file and was not regenerated (new classes may need `tailwind build`).
+
+## Patch 6: "Test this number" card (dev-console 0005)
+
+Screenshots: `patches/voice/dev-console/screenshots/detail_phone_test_ready.png`, `detail_phone_test_notready.png`.
+
+Decision: the button does not place a call. A real test has to be a phone call (it is the only way to test Vobiz, the number and the agent together). An in-browser call would test a different path (the web widget voice, which is not recorded in Conversations), and the console calling the user's phone would be outbound calling, which is out of scope and costs money. So the card makes the phone test easy and safe.
+
+What it shows (phone numbers only, on the Setup tab)
+- Checks the console can see: an agent is connected, the connection is on, handover is set up (optional).
+- When ready: a "Call +91..." tap-to-call link (the clinic's public number if it forwards here, which tests the whole route; otherwise the dialled number), and four things to check on the call, ending with the Calls tab.
+- Always: a note that the console cannot check Vobiz (Answer URL pasted?) or the platform's phone settings.
+
+Checked: 62 integration tests pass without a database (3 more tests than patch 5b: 5 new card tests, 2 earlier presenter tests already counted). Two deliberate breakages (ready ignoring a paused connection; call link shown when not ready) each fail a test. Rendered from the real template in a browser, desktop and 390 px wide, no sideways scroll. Series applies on clean `main` (`ee3198d`).
+
+Not tested: a real call, and `tel:` links on a real phone.

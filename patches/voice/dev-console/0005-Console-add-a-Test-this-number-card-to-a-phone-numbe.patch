@@ -1,0 +1,212 @@
+From 52e936177596078c52921c9d6e20c2d062aaa5c9 Mon Sep 17 00:00:00 2001
+From: Abinash <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 18:44:45 +0000
+Subject: [PATCH] Console: add a "Test this number" card to a phone number's
+ page
+
+Shows what the console can see (agent connected, connection on, handover set
+up) and, when ready, a tap-to-call link for the number to ring: the clinic's
+public number if it forwards here, else the dialled number. The card does not
+place a call; it says it cannot check Vobiz or the platform's phone settings.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ integration/test_call.py                | 36 +++++++++++++++++
+ integration/tests.py                    | 52 +++++++++++++++++++++++++
+ integration/views.py                    | 12 +++++-
+ templates/integrations/_phone_test.html | 28 +++++++++++++
+ templates/integrations/detail.html      |  2 +
+ 5 files changed, 129 insertions(+), 1 deletion(-)
+ create mode 100644 integration/test_call.py
+ create mode 100644 templates/integrations/_phone_test.html
+
+diff --git a/integration/test_call.py b/integration/test_call.py
+new file mode 100644
+index 0000000..df653fb
+--- /dev/null
++++ b/integration/test_call.py
+@@ -0,0 +1,36 @@
++"""
++What the "Test this number" card on a phone number's page shows.
++
++A real test is a phone call, so the card does not place one: it says whether
++the console side is ready, and which number to ring. It cannot see Vobiz (is
++the Answer URL pasted there?) or the platform's phone secrets; the card says so.
++"""
++
++from typing import Optional
++
++
++def checks(binding, agent) -> list:
++    """(label, ok, hint) for what the console can see. ``ok`` of None means optional and not set."""
++    connected = binding is not None and agent is not None
++    return [
++        ("An agent is connected", connected, "" if connected else "Pick an agent under Answer calls with an agent."),
++        (
++            "The connection is on",
++            bool(connected and binding.is_active),
++            "" if connected and binding.is_active else "Resume it, or callers are hung up on.",
++        ),
++        (
++            "Calls can be handed to a person",
++            True if connected and (binding.config or {}).get("handover") else None,
++            "Optional. Without it the agent cannot pass a caller to staff.",
++        ),
++    ]
++
++
++def ready(rows: list) -> bool:
++    return all(ok for _, ok, _ in rows if ok is not None)
++
++
++def number_to_ring(credentials: dict) -> Optional[str]:
++    """The clinic's public number when it forwards here (tests the whole path), else the dialled number."""
++    return credentials.get("public_number") or credentials.get("phone_number") or None
+diff --git a/integration/tests.py b/integration/tests.py
+index 3e13223..2290087 100644
+--- a/integration/tests.py
++++ b/integration/tests.py
+@@ -669,3 +669,55 @@ class CallsPageTests(SimpleTestCase):
+         html = PhoneNumberPageTests()._page()
+         self.assertIn("/calls/", html)
+         self.assertNotIn("/calls/", PhoneNumberPageTests()._page(is_phone=False))
++
++
++class TestCallCardTests(SimpleTestCase):
++    def _binding(self, active=True, handover=None):
++        from types import SimpleNamespace as NS
++
++        return NS(is_active=active, config={"handover": handover} if handover else {})
++
++    def test_ready_needs_an_agent_and_an_active_connection(self):
++        from types import SimpleNamespace as NS
++
++        from integration import test_call
++
++        agent = NS(pk=1)
++        self.assertFalse(test_call.ready(test_call.checks(None, None)))
++        self.assertFalse(test_call.ready(test_call.checks(self._binding(), None)))
++        self.assertFalse(test_call.ready(test_call.checks(self._binding(active=False), agent)))
++        self.assertTrue(test_call.ready(test_call.checks(self._binding(), agent)))
++
++    def test_handover_is_optional(self):
++        from types import SimpleNamespace as NS
++
++        from integration import test_call
++
++        agent = NS(pk=1)
++        self.assertIsNone(test_call.checks(self._binding(), agent)[2][1])
++        self.assertIs(test_call.checks(self._binding(handover={"number": "+919999911111"}), agent)[2][1], True)
++
++    def test_rings_the_public_number_when_there_is_one(self):
++        from integration import test_call
++
++        self.assertEqual(test_call.number_to_ring({"phone_number": "+918000012345", "public_number": "+919876543210"}), "+919876543210")
++        self.assertEqual(test_call.number_to_ring({"phone_number": "+918000012345", "public_number": ""}), "+918000012345")
++        self.assertIsNone(test_call.number_to_ring({}))
++
++    def _card(self, ready, number="+918000012345"):
++        from types import SimpleNamespace as NS
++
++        from integration import test_call
++
++        rows = test_call.checks(self._binding() if ready else None, NS(pk=1) if ready else None)
++        return PhoneNumberPageTests()._page(test_call={"checks": rows, "ready": ready, "number": number})
++
++    def test_card_offers_the_call_only_when_ready(self):
++        self.assertIn('href="tel:+918000012345"', self._card(True))
++        html = self._card(False)
++        self.assertNotIn("tel:", html)
++        self.assertIn("An agent is connected", html)
++        self.assertIn("cannot check Vobiz", html)
++
++    def test_whatsapp_numbers_have_no_test_card(self):
++        self.assertNotIn("Test this number", PhoneNumberPageTests()._page(is_phone=False))
+diff --git a/integration/views.py b/integration/views.py
+index aff97a2..1a106eb 100644
+--- a/integration/views.py
++++ b/integration/views.py
+@@ -13,7 +13,7 @@ from agents.models import AgentConfig
+ from core.constants import Product
+ from core.logging import get_logger
+ from console_index import reads as console_reads
+-from integration import calls as call_rows, webhooks
++from integration import calls as call_rows, test_call, webhooks
+ from integration.models import Integration, ProductIntegration
+ from integration.schemas import products as product_configs
+ from integration.schemas.products.utils import Callback
+@@ -269,6 +269,15 @@ def _credential_rows(integ: Integration) -> list:
+     ]
+ 
+ 
++def _test_call(integ: Integration, binding, agent) -> dict:
++    rows = test_call.checks(binding, agent)
++    return {
++        "checks": rows,
++        "ready": test_call.ready(rows),
++        "number": test_call.number_to_ring(integ.public_credentials()),
++    }
++
++
+ def _binding_context(request, integ: Integration) -> dict:
+     binding = ProductIntegration.objects.filter(integration=integ).first()
+ 
+@@ -293,6 +302,7 @@ def _binding_context(request, integ: Integration) -> dict:
+         "binding": binding,
+         "is_phone": integ._channel == Integration.CHANNEL_TELEPHONY,
+         "handover": _handover_form(binding),
++        "test_call": _test_call(integ, binding, bound_agent),
+         "bound_agent": bound_agent,
+         "agents": AgentConfig.objects.filter(
+             workspace_id=request.workspace_id, is_active=True
+diff --git a/templates/integrations/_phone_test.html b/templates/integrations/_phone_test.html
+new file mode 100644
+index 0000000..582fa98
+--- /dev/null
++++ b/templates/integrations/_phone_test.html
+@@ -0,0 +1,28 @@
++<div class="px-6 pb-6">
++    <div class="rounded-lg border border-gray-200 px-4 py-3 flex flex-col gap-3">
++        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Test this number</p>
++        <ul class="flex flex-col gap-1.5 text-sm">
++            {% for label, ok, hint in test_call.checks %}
++            <li class="flex items-start gap-2">
++                <i data-lucide="{% if ok %}check-circle-2{% elif ok is None %}minus-circle{% else %}x-circle{% endif %}"
++                   class="w-4 h-4 mt-0.5 flex-shrink-0 {% if ok %}text-green-600{% elif ok is None %}text-gray-400{% else %}text-red-500{% endif %}"></i>
++                <span class="text-gray-700">{{ label }}{% if hint and not ok %}<span class="block text-xs text-gray-400">{{ hint }}</span>{% endif %}</span>
++            </li>
++            {% endfor %}
++        </ul>
++        {% if test_call.ready and test_call.number %}
++        <a href="tel:{{ test_call.number }}"
++           class="inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
++            <i data-lucide="phone-call" class="w-4 h-4"></i> Call {{ test_call.number }}
++        </a>
++        <p class="text-xs text-gray-500">On your phone this starts the call; on a computer, dial it from any phone.</p>
++        <ul class="list-disc pl-4 text-xs text-gray-500 flex flex-col gap-0.5">
++            <li>You hear the greeting, in the language you expect.</li>
++            <li>Ask for something the agent's tools can do.</li>
++            <li>Ask for a person: staff phone rings (during staff hours).</li>
++            <li>A few minutes after you hang up, the call shows on the <a href="{% url 'agents:integration_calls' integration.pk %}" class="text-indigo-600 hover:underline">Calls</a> tab.</li>
++        </ul>
++        {% endif %}
++        <p class="text-xs text-gray-400">The console cannot check Vobiz (is the Answer URL set there?) or the platform's phone settings. If the call is not answered, check those first.</p>
++    </div>
++</div>
+diff --git a/templates/integrations/detail.html b/templates/integrations/detail.html
+index 712eb2f..537accd 100644
+--- a/templates/integrations/detail.html
++++ b/templates/integrations/detail.html
+@@ -116,6 +116,8 @@
+         </div>
+         {% endif %}
+ 
++        {% if is_phone %}{% include 'integrations/_phone_test.html' %}{% endif %}
++
+         {% if integration.provider == 'interakt_tp' %}
+         {% include 'integrations/_template_create.html' %}
+         {% endif %}
+-- 
+2.43.0
+

@@ -1,0 +1,28 @@
+<div class="px-6 pb-6">
+    <div class="rounded-lg border border-gray-200 px-4 py-3 flex flex-col gap-3">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Test this number</p>
+        <ul class="flex flex-col gap-1.5 text-sm">
+            {% for label, ok, hint in test_call.checks %}
+            <li class="flex items-start gap-2">
+                <i data-lucide="{% if ok %}check-circle-2{% elif ok is None %}minus-circle{% else %}x-circle{% endif %}"
+                   class="w-4 h-4 mt-0.5 flex-shrink-0 {% if ok %}text-green-600{% elif ok is None %}text-gray-400{% else %}text-red-500{% endif %}"></i>
+                <span class="text-gray-700">{{ label }}{% if hint and not ok %}<span class="block text-xs text-gray-400">{{ hint }}</span>{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if test_call.ready and test_call.number %}
+        <a href="tel:{{ test_call.number }}"
+           class="inline-flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">
+            <i data-lucide="phone-call" class="w-4 h-4"></i> Call {{ test_call.number }}
+        </a>
+        <p class="text-xs text-gray-500">On your phone this starts the call; on a computer, dial it from any phone.</p>
+        <ul class="list-disc pl-4 text-xs text-gray-500 flex flex-col gap-0.5">
+            <li>You hear the greeting, in the language you expect.</li>
+            <li>Ask for something the agent's tools can do.</li>
+            <li>Ask for a person: staff phone rings (during staff hours).</li>
+            <li>A few minutes after you hang up, the call shows on the <a href="{% url 'agents:integration_calls' integration.pk %}" class="text-indigo-600 hover:underline">Calls</a> tab.</li>
+        </ul>
+        {% endif %}
+        <p class="text-xs text-gray-400">The console cannot check Vobiz (is the Answer URL set there?) or the platform's phone settings. If the call is not answered, check those first.</p>
+    </div>
+</div>

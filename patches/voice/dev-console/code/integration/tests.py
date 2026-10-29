@@ -669,3 +669,55 @@ class CallsPageTests(SimpleTestCase):
         html = PhoneNumberPageTests()._page()
         self.assertIn("/calls/", html)
         self.assertNotIn("/calls/", PhoneNumberPageTests()._page(is_phone=False))
+
+
+class TestCallCardTests(SimpleTestCase):
+    def _binding(self, active=True, handover=None):
+        from types import SimpleNamespace as NS
+
+        return NS(is_active=active, config={"handover": handover} if handover else {})
+
+    def test_ready_needs_an_agent_and_an_active_connection(self):
+        from types import SimpleNamespace as NS
+
+        from integration import test_call
+
+        agent = NS(pk=1)
+        self.assertFalse(test_call.ready(test_call.checks(None, None)))
+        self.assertFalse(test_call.ready(test_call.checks(self._binding(), None)))
+        self.assertFalse(test_call.ready(test_call.checks(self._binding(active=False), agent)))
+        self.assertTrue(test_call.ready(test_call.checks(self._binding(), agent)))
+
+    def test_handover_is_optional(self):
+        from types import SimpleNamespace as NS
+
+        from integration import test_call
+
+        agent = NS(pk=1)
+        self.assertIsNone(test_call.checks(self._binding(), agent)[2][1])
+        self.assertIs(test_call.checks(self._binding(handover={"number": "+919999911111"}), agent)[2][1], True)
+
+    def test_rings_the_public_number_when_there_is_one(self):
+        from integration import test_call
+
+        self.assertEqual(test_call.number_to_ring({"phone_number": "+918000012345", "public_number": "+919876543210"}), "+919876543210")
+        self.assertEqual(test_call.number_to_ring({"phone_number": "+918000012345", "public_number": ""}), "+918000012345")
+        self.assertIsNone(test_call.number_to_ring({}))
+
+    def _card(self, ready, number="+918000012345"):
+        from types import SimpleNamespace as NS
+
+        from integration import test_call
+
+        rows = test_call.checks(self._binding() if ready else None, NS(pk=1) if ready else None)
+        return PhoneNumberPageTests()._page(test_call={"checks": rows, "ready": ready, "number": number})
+
+    def test_card_offers_the_call_only_when_ready(self):
+        self.assertIn('href="tel:+918000012345"', self._card(True))
+        html = self._card(False)
+        self.assertNotIn("tel:", html)
+        self.assertIn("An agent is connected", html)
+        self.assertIn("cannot check Vobiz", html)
+
+    def test_whatsapp_numbers_have_no_test_card(self):
+        self.assertNotIn("Test this number", PhoneNumberPageTests()._page(is_phone=False))
