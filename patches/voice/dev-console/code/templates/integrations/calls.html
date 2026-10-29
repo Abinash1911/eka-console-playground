@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+
+{% block page_title %}{{ integration.name }} · Calls{% endblock %}
+
+{% block breadcrumbs %}
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_list' %}" class="hover:text-gray-700">Integrations</a></li>
+<li class="text-gray-500">/</li>
+<li><a href="{% url 'agents:integration_detail' integration.pk %}" class="hover:text-gray-700">{{ integration.name }}</a></li>
+<li class="text-gray-500">/</li>
+<li class="text-gray-900">Calls</li>
+{% endblock %}
+
+{% block content %}
+{% include 'integrations/_phone_tabs.html' with tab='calls' %}
+
+{% if not bound_agent %}
+<div class="rounded-xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">
+    No agent answers this number yet. Connect one on the
+    <a href="{% url 'agents:integration_detail' integration.pk %}" class="text-indigo-600 hover:underline">Setup</a> tab.
+</div>
+{% else %}
+
+{% if stats %}
+<div class="mb-5 grid grid-cols-3 gap-4">
+    <div class="rounded-xl border border-gray-100 bg-white p-4">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Calls on this page</p>
+        <p class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.calls }}</p>
+    </div>
+    <div class="rounded-xl border border-gray-100 bg-white p-4">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Handed to staff</p>
+        <p class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.handed_over_pct }}%</p>
+    </div>
+    <div class="rounded-xl border border-gray-100 bg-white p-4">
+        <p class="text-xs uppercase tracking-wide text-gray-500">Average length</p>
+        <p class="mt-1 text-2xl font-semibold text-gray-900">{{ stats.avg_length }}</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="overflow-x-auto rounded-xl border border-gray-100 bg-white shadow-sm">
+    <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+            <tr>
+                <th class="px-4 py-3">When</th>
+                <th class="px-4 py-3">Caller</th>
+                <th class="px-4 py-3">Length</th>
+                <th class="px-4 py-3">Outcome</th>
+                <th class="px-4 py-3">How it ended</th>
+                <th class="px-4 py-3">Staff handover</th>
+                <th class="px-4 py-3">Tools used</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+            {% for row in rows %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 whitespace-nowrap">
+                    <a href="{% url 'conversations:list' %}?filter_session_id={{ row.session_id }}" class="text-indigo-600 hover:underline">{{ row.when }}</a>
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap text-gray-700">{{ row.caller }}</td>
+                <td class="px-4 py-3 whitespace-nowrap text-gray-700">{{ row.duration }}</td>
+                <td class="px-4 py-3 whitespace-nowrap">
+                    <span class="rounded-full px-2.5 py-0.5 text-xs font-medium
+                        {% if row.tone == 'ok' %}bg-green-50 text-green-700
+                        {% elif row.tone == 'warn' %}bg-amber-50 text-amber-700
+                        {% elif row.tone == 'bad' %}bg-red-50 text-red-700
+                        {% else %}bg-gray-100 text-gray-600{% endif %}">{{ row.outcome }}</span>
+                </td>
+                <td class="px-4 py-3 text-gray-600">{{ row.ended }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.handover }}</td>
+                <td class="px-4 py-3 text-gray-600">{{ row.tools|join:", "|default:"—" }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="7" class="px-4 py-10 text-center text-gray-500">No calls yet. Calls appear here a few minutes after they end.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if page.has_prev or page.has_next %}
+<div class="mt-4 flex justify-between text-sm">
+    {% if page.has_prev %}<a href="?page={{ page.page|add:'-1' }}" class="text-indigo-600 hover:underline">← Newer</a>{% else %}<span></span>{% endif %}
+    {% if page.has_next %}<a href="?page={{ page.page|add:'1' }}" class="text-indigo-600 hover:underline">Older →</a>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

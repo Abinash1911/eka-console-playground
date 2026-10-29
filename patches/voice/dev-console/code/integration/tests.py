@@ -573,3 +573,99 @@ class PhoneNumberPageTests(SimpleTestCase):
         html = _stub_engine().get_template("integrations/create.html").render(Context({"csrf_token": "x"}))
         self.assertIn("?provider=vobiz", html)
         self.assertIn("Inbound calls via Vobiz", html)
+
+
+class CallRowTests(SimpleTestCase):
+    """How a saved call summary reads on the Calls page."""
+
+    def _row(self, call=None, **over):
+        from datetime import datetime, timezone
+        from types import SimpleNamespace as NS
+        from uuid import uuid4
+
+        from integration import calls
+
+        promoted = {"call": call} if call is not None else {}
+        return calls.present(NS(
+            session_id=uuid4(), context_promoted=promoted,
+            created_at=datetime(2026, 10, 29, 9, 30, tzinfo=timezone.utc), **over,
+        ))
+
+    def _call(self, **over):
+        return {"v": 1, "duration_s": 131, "ended_by": "caller_hung_up", "user_turns": 4,
+                "handover": "none", "tools": ["book_appointment"], "caller": "+91xxxxxx3210", **over}
+
+    def test_a_normal_call(self):
+        row = self._row(self._call())
+        self.assertEqual(
+            (row["duration"], row["outcome"], row["tone"], row["ended"], row["caller"], row["tools"]),
+            ("2:11", "Answered by agent", "ok", "Caller hung up", "+91xxxxxx3210", ["book_appointment"]),
+        )
+
+    def test_outcomes(self):
+        cases = [
+            ({"user_turns": 0}, "No conversation"),
+            ({"user_turns": 0, "handover": "transferred"}, "No conversation"),
+            ({"handover": "transferred", "ended_by": "transferred"}, "Handed over"),
+            ({"handover": "failed"}, "Handover failed"),
+            ({"handover": "declined"}, "Outside staff hours"),
+            ({"ended_by": "error"}, "Error"),
+        ]
+        for over, label in cases:
+            with self.subTest(over=over):
+                self.assertEqual(self._row(self._call(**over))["outcome"], label)
+
+    def test_a_session_without_a_summary_does_not_break_the_page(self):
+        row = self._row(None)
+        self.assertEqual(
+            (row["duration"], row["caller"], row["ended"], row["recorded"], row["outcome"]),
+            ("—", "Unknown", "—", False, "Not recorded"),
+        )
+
+    def test_unknown_values_show_a_dash_not_an_error(self):
+        row = self._row(self._call(ended_by="from_the_future", handover="???", duration_s="x"))
+        self.assertEqual((row["ended"], row["handover"], row["duration"]), ("—", "—", "—"))
+
+    def test_stats_cover_the_rows_shown(self):
+        from integration import calls
+
+        rows = [self._row(self._call(duration_s=60, handover="transferred")),
+                self._row(self._call(duration_s=120)), self._row(self._call(duration_s=180)),
+                self._row(self._call(duration_s=0, handover="transferred"))]
+        self.assertEqual(calls.stats(rows), {"calls": 4, "handed_over_pct": 50, "avg_length": "1:30"})
+        self.assertIsNone(calls.stats([]))
+
+
+class CallsPageTests(SimpleTestCase):
+    def _page(self, rows, **over):
+        from types import SimpleNamespace as NS
+
+        from django.template import Context
+
+        from integration import calls
+
+        context = {
+            "csrf_token": "x", "integration": NS(pk=7, name="Front desk"), "bound_agent": NS(pk=3),
+            "rows": rows, "stats": calls.stats(rows),
+            "page": {"page": 2, "has_next": True, "has_prev": True}, **over,
+        }
+        return _stub_engine().get_template("integrations/calls.html").render(Context(context))
+
+    def _rows(self):
+        return [CallRowTests()._row(CallRowTests()._call(handover="transferred"))]
+
+    def test_rows_stats_and_link_to_the_conversation(self):
+        rows = self._rows()
+        html = self._page(rows)
+        for text in ("Handed over", "2:11", "+91xxxxxx3210", "book_appointment", "100%", "Older"):
+            self.assertIn(text, html)
+        self.assertIn(f"?filter_session_id={rows[0]['session_id']}", html)
+
+    def test_no_calls_and_no_agent_say_what_to_do(self):
+        self.assertIn("No calls yet", self._page([]))
+        self.assertIn("No agent answers this number yet", self._page([], bound_agent=None))
+
+    def test_the_number_page_has_both_tabs(self):
+        html = PhoneNumberPageTests()._page()
+        self.assertIn("/calls/", html)
+        self.assertNotIn("/calls/", PhoneNumberPageTests()._page(is_phone=False))

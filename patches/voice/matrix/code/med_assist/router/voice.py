@@ -221,6 +221,8 @@ async def _answer_call(
                 **({"integration_uuid": integration_uuid} if integration_uuid else {}),
             },
             referer="vobiz-telephony",
+            # The console's Conversations page filters on this (web, whatsapp, voice).
+            channel="voice",
         )
 
         session_response = await create_session(

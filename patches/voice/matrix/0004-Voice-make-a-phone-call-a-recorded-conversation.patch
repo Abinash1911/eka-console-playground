@@ -1,0 +1,572 @@
+From d811b68a1086fda5300d346999df2b4d8b7fb891 Mon Sep 17 00:00:00 2001
+From: Abinash Haldorai <abinash.haldorai@eka.care>
+Date: Thu, 29 Oct 2026 18:36:03 +0000
+Subject: [PATCH] Voice: make a phone call a recorded conversation
+
+A finished phone call was invisible to the console. The Conversations page
+lists sessions from the DynamoDB session table, and the console's ingest
+drops message rows whose session row is missing ("not in dynamo"); chat
+writes that row on the first user message, but the voice pipeline never did,
+so a call's transcript was saved with no session to hang it on.
+
+- /voice/answer sessions now have channel "voice" (the name the console's
+  channel filter already offers).
+- When the call connects, mark_conversation_initiated writes the session row,
+  the same call chat makes on the first message.
+- When the call ends, call_record merges what only the pipeline knows into
+  the session's initial_context under "call": duration, how it ended
+  (caller_hung_up, silence, time_limit, transferred, error), caller turns,
+  handover outcome (none, requested, transferred, failed, declined), tools
+  used, and the caller's number masked. The session's other context is kept.
+  It is best effort: a failure is logged, never raised.
+- The agent processor notes the names of tools the agent calls; the handover
+  tool and processor record their outcome on the shared HandoverState.
+
+The browser (WebRTC) voice pipeline has the same gap and is not changed
+here.
+
+Not run on a real call: the end-of-call wiring in the pipeline (disconnect,
+silence, time limit handlers) is a few lines and is not covered by a test;
+the record itself, the tool-name capture and the outcomes are.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ med_assist/router/voice.py                    |   2 +
+ med_assist/service/voice/agent_processor.py   |  10 +-
+ med_assist/service/voice/call_record.py       | 106 +++++++++++
+ .../service/voice/handover_processor.py       |   2 +
+ med_assist/service/voice/handover_tool.py     |   4 +
+ med_assist/service/voice/pipeline.py          |  18 +-
+ med_assist/tests/test_voice_call_record.py    | 172 ++++++++++++++++++
+ med_assist/tests/test_voice_handover.py       |   6 +-
+ .../tests/test_voice_telephony_number.py      |   1 +
+ voice_telephony_flow.md                       |   6 +
+ 10 files changed, 322 insertions(+), 5 deletions(-)
+ create mode 100644 med_assist/service/voice/call_record.py
+ create mode 100644 med_assist/tests/test_voice_call_record.py
+
+diff --git a/med_assist/router/voice.py b/med_assist/router/voice.py
+index f8c04ac..765235a 100644
+--- a/med_assist/router/voice.py
++++ b/med_assist/router/voice.py
+@@ -221,6 +221,8 @@ async def _answer_call(
+                 **({"integration_uuid": integration_uuid} if integration_uuid else {}),
+             },
+             referer="vobiz-telephony",
++            # The console's Conversations page filters on this (web, whatsapp, voice).
++            channel="voice",
+         )
+ 
+         session_response = await create_session(
+diff --git a/med_assist/service/voice/agent_processor.py b/med_assist/service/voice/agent_processor.py
+index 4ec88eb..0d32173 100644
+--- a/med_assist/service/voice/agent_processor.py
++++ b/med_assist/service/voice/agent_processor.py
+@@ -66,6 +66,8 @@ class EchoAgentProcessor(FrameProcessor):
+         self._agent = agent
+         self._session_id = session_id
+         self._conversation_history: list[Message] = []
++        # Names of the tools the agent called, in order, for the call record.
++        self.tools_used: list[str] = []
+ 
+     async def process_frame(self, frame, direction: FrameDirection):
+         await super().process_frame(frame, direction)
+@@ -169,7 +171,13 @@ class EchoAgentProcessor(FrameProcessor):
+                         error=str(event.error),
+                     )
+ 
+-                # Ignore TOOL_CALL_START / TOOL_CALL_END — out of scope for voice
++                elif event.type == StreamEventType.TOOL_CALL_START:
++                    # Only noted for the call record; the caller cannot see a tool call.
++                    name = (event.details or {}).get("tool_name")
++                    if name:
++                        self.tools_used.append(name)
++
++                # TOOL_CALL_END is out of scope for voice
+ 
+         except asyncio.CancelledError:
+             logger.debug(
+diff --git a/med_assist/service/voice/call_record.py b/med_assist/service/voice/call_record.py
+new file mode 100644
+index 0000000..0c31374
+--- /dev/null
++++ b/med_assist/service/voice/call_record.py
+@@ -0,0 +1,106 @@
++"""
++What the console shows about a finished phone call.
++
++A phone call is a conversation like any other, so it needs a session row in
++DynamoDB (``mark_conversation_initiated``, called when the call connects) for the
++console's Conversations page to project and list it. At the end of the call the
++facts only the pipeline knows are merged into the session's ``initial_context``
++under ``call``, where the console reads them:
++
++    {"call": {"v": 1, "duration_s": 131, "ended_by": "caller_hung_up",
++              "user_turns": 4, "handover": "transferred",
++              "tools": ["book_appointment"], "caller": "+91xxxxxx3210"}}
++
++``ended_by``: caller_hung_up, silence, time_limit, transferred, error.
++``handover``: none; requested (the caller left before it started); transferred;
++failed; declined (outside staff hours).
++"""
++
++import re
++import time
++from dataclasses import dataclass, field
++from typing import List, Optional
++
++from common.utils import get_logger
++from echo.models.user_conversation import MessageRole
++from med_assist.models.session import SessionCache
++from med_assist.service.voice import handover
++from med_assist.utils.region import session_region
++from med_assist.utils.session_utils import update_session_context
++
++logger = get_logger("med_assist.service.voice.call_record")
++
++SCHEMA_VERSION = 1
++
++
++@dataclass
++class CallFacts:
++    """Gathered while the call runs; ``end`` is called by whatever ends it first."""
++
++    started: float = field(default_factory=time.monotonic)
++    ended_by: Optional[str] = None
++    user_turns: int = 0
++    handover: str = "none"
++    tools_used: List[str] = field(default_factory=list)
++
++    def end(self, reason: str) -> None:
++        """Record how the call ended. The first reason wins: later ones are consequences of it."""
++        if self.ended_by is None:
++            self.ended_by = reason
++
++
++def mask_number(number: Optional[str]) -> Optional[str]:
++    """``+919876543210`` -> ``+91xxxxxx3210``: country prefix and last four digits only."""
++    if not number or not re.match(r"^\+\d{8,15}$", number):
++        return None
++    return number[:3] + "x" * (len(number) - 7) + number[-4:]
++
++
++def to_context(facts: CallFacts, caller: Optional[str]) -> dict:
++    call = {
++        "v": SCHEMA_VERSION,
++        "duration_s": max(0, round(time.monotonic() - facts.started)),
++        "ended_by": facts.ended_by or "caller_hung_up",
++        "user_turns": facts.user_turns,
++        "handover": facts.handover,
++        "tools": list(dict.fromkeys(facts.tools_used)),
++    }
++    masked = mask_number(caller)
++    if masked:
++        call["caller"] = masked
++    return {"call": call}
++
++
++async def finish(
++    session_cache: SessionCache,
++    facts: CallFacts,
++    history: list,
++    tools_used: List[str],
++    handover_outcome: Optional[str],
++) -> None:
++    """Fill in what the pipeline knows at the end of the call, then save it."""
++    facts.user_turns = sum(1 for message in history if message.role == MessageRole.USER)
++    facts.tools_used = tools_used
++    facts.handover = handover_outcome or "none"
++    await save(session_cache, facts)
++
++
++async def save(session_cache: SessionCache, facts: CallFacts) -> None:
++    """Merge the call facts into the session. Best effort: a failure is logged, never raised."""
++    try:
++        caller = handover.context_of(session_cache).get("caller")
++        await update_session_context(
++            session_cache.session_id,
++            to_context(facts, caller),
++            await session_region(session_cache),
++        )
++        logger.info(
++            "Call record saved", fn="save", sid=session_cache.session_id, ended_by=facts.ended_by
++        )
++    except Exception as e:
++        logger.error(
++            "Failed to save call record",
++            fn="save",
++            sid=session_cache.session_id,
++            error=str(e),
++        )
+diff --git a/med_assist/service/voice/handover_processor.py b/med_assist/service/voice/handover_processor.py
+index e219ba4..058e8cd 100644
+--- a/med_assist/service/voice/handover_processor.py
++++ b/med_assist/service/voice/handover_processor.py
+@@ -86,8 +86,10 @@ class HandoverProcessor(FrameProcessor):
+             return
+         self._started = True
+         if await self._transfer():
++            self._state.outcome = "transferred"
+             logger.info("Handover started", fn="_start_transfer", sid=self._session_id)
+             return
++        self._state.outcome = "failed"
+         logger.error(
+             "Handover failed — caller stays with the agent",
+             fn="_start_transfer",
+diff --git a/med_assist/service/voice/handover_tool.py b/med_assist/service/voice/handover_tool.py
+index 613c7b9..1425339 100644
+--- a/med_assist/service/voice/handover_tool.py
++++ b/med_assist/service/voice/handover_tool.py
+@@ -27,6 +27,8 @@ class HandoverState:
+ 
+     requested: bool = False
+     reason: Optional[str] = None
++    # For the call record: requested (not finished), transferred, failed or declined.
++    outcome: Optional[str] = None
+ 
+ 
+ class TransferToHumanTool(BaseTool):
+@@ -70,6 +72,7 @@ class TransferToHumanTool(BaseTool):
+         if self._state.requested:
+             return "A transfer is already in progress. Do not say anything more."
+         if not self._settings.is_open(self._now):
++            self._state.outcome = "declined"
+             logger.info(
+                 "Handover declined — outside staff hours",
+                 fn="run",
+@@ -83,6 +86,7 @@ class TransferToHumanTool(BaseTool):
+             )
+         self._state.requested = True
+         self._state.reason = reason
++        self._state.outcome = "requested"
+         logger.info("Handover requested", fn="run", sid=self._session_id, reason=reason)
+         return (
+             "The transfer is starting. Say ONE short sentence in the caller's language telling "
+diff --git a/med_assist/service/voice/pipeline.py b/med_assist/service/voice/pipeline.py
+index b698bac..f90d199 100644
+--- a/med_assist/service/voice/pipeline.py
++++ b/med_assist/service/voice/pipeline.py
+@@ -40,6 +40,7 @@ from pipecat.turns.user_mute import FirstSpeechUserMuteStrategy
+ from pipecat.turns.user_turn_strategies import UserTurnStrategies
+ 
+ from common.utils import get_logger
++from med_assist.utils.conversation_utils import mark_conversation_initiated
+ from med_assist.utils.region import session_region
+ from med_assist.utils.user_context_utils import resolve_user_context
+ from med_assist.config.voice import (
+@@ -51,7 +52,7 @@ from med_assist.config.voice import (
+ from med_assist.config.websocket import IncomingEventType
+ from med_assist.models.agent_config import AgentRuntimeConfig, VoiceAgentConfig
+ from med_assist.models.session import SessionCache
+-from med_assist.service.voice import caller_context, handover
++from med_assist.service.voice import call_record, caller_context, handover
+ from med_assist.service.voice.agent_processor import EchoAgentProcessor, _ist_now
+ from med_assist.service.voice.handover_processor import HandoverProcessor
+ from med_assist.service.voice.handover_tool import HandoverState, TransferToHumanTool
+@@ -210,6 +211,7 @@ async def run_voice_ws_pipeline(
+     mulaw 8kHz audio over WebSocket (Vobiz/Plivo protocol).
+     """
+     session_id = session_cache.session_id
++    facts = call_record.CallFacts()
+     # logger.info("run_voice_ws_pipeline entered", fn="run_voice_ws_pipeline", sid=session_id)
+     try:
+         # 1. Read Plivo/Vobiz start message to get stream_id and call_id
+@@ -381,6 +383,9 @@ async def run_voice_ws_pipeline(
+                     f"[VOICE] {session_id} : connected : {_ist_now()} : agent={session_cache.agent_id}"
+                 )
+             logger.info("Pipeline started, sending greeting (Vobiz)", sid=session_id)
++            # The call is a conversation from here on: write its session row so the
++            # console can list it (chat does this on the first user message).
++            await mark_conversation_initiated(session_cache)
+             agent_processor._conversation_history.append(
+                 Message(
+                     msg_id="voice-greeting",
+@@ -399,12 +404,15 @@ async def run_voice_ws_pipeline(
+                 fn="on_client_disconnected",
+                 sid=session_id,
+             )
++            # After a transfer Vobiz closes the stream too; that is not the caller hanging up.
++            facts.end("transferred" if handover_state.outcome == "transferred" else "caller_hung_up")
+             await task.cancel()
+ 
+         # 13. Idle timeout handler
+         @task.event_handler("on_idle_timeout")
+         async def on_idle_timeout(task):
+             logger.info("Idle timeout reached (Vobiz)", sid=session_id)
++            facts.end("silence")
+             await task.queue_frame(TTSSpeakFrame(text=GOODBYE_IDLE_MSG))
+             await task.stop_when_done()
+ 
+@@ -418,14 +426,18 @@ async def run_voice_ws_pipeline(
+             await asyncio.wait_for(runner.run(task), timeout=MAX_CALL_DURATION_SECS)
+         except asyncio.TimeoutError:
+             logger.info("Max call duration reached (Vobiz)", sid=session_id)
++            facts.end("time_limit")
+             await task.queue_frame(TTSSpeakFrame(text=GOODBYE_MAX_DURATION_MSG))
+             await asyncio.sleep(3)
+             await task.cancel()
+         finally:
+-            await _persist_transcript(
+-                session_id, agent_processor.get_conversation_history(), session_cache
++            history = agent_processor.get_conversation_history()
++            await _persist_transcript(session_id, history, session_cache)
++            await call_record.finish(
++                session_cache, facts, history, agent_processor.tools_used, handover_state.outcome
+             )
+     except Exception as e:
++        facts.end("error")
+         logger.critical(
+             "Voice pipeline crashed (Vobiz)",
+             fn="run_voice_ws_pipeline",
+diff --git a/med_assist/tests/test_voice_call_record.py b/med_assist/tests/test_voice_call_record.py
+new file mode 100644
+index 0000000..932d78a
+--- /dev/null
++++ b/med_assist/tests/test_voice_call_record.py
+@@ -0,0 +1,172 @@
++import json
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock, patch
++
++import pytest
++from echo.llm.schemas import StreamEvent, StreamEventType
++from echo.models.user_conversation import Message, MessageRole, TextMessage
++from pipecat.frames.frames import LLMContextFrame
++from pipecat.processors.aggregators.llm_context import LLMContext
++from pipecat.processors.frame_processor import FrameDirection
++
++from med_assist.service.voice import call_record
++from med_assist.service.voice.agent_processor import EchoAgentProcessor
++from med_assist.service.voice.call_record import CallFacts
++
++CALLER = "+919876543210"
++
++
++def _session(context=None):
++    return SimpleNamespace(
++        session_id="sess-1",
++        initial_context=json.dumps(
++            context if context is not None else {"channel": "vobiz", "caller": CALLER}
++        ),
++    )
++
++
++def _message(role):
++    return Message(
++        msg_id=f"m-{role}", role=role, content=[TextMessage(type="text", text="hi")], timestamp=1
++    )
++
++
++class TestMaskNumber:
++    def test_keeps_the_country_prefix_and_the_last_four_digits(self):
++        assert call_record.mask_number("+919876543210") == "+91xxxxxx3210"
++        assert call_record.mask_number("+14155550100") == "+14xxxxx0100"
++
++    @pytest.mark.parametrize("value", [None, "", "9876543210", "+91", "call me", "+91987654321x"])
++    def test_anything_else_is_not_shown(self, value):
++        assert call_record.mask_number(value) is None
++
++    def test_the_full_number_is_not_in_the_mask(self):
++        assert "98765" not in call_record.mask_number(CALLER)
++
++
++class TestFacts:
++    def test_the_first_reason_a_call_ended_wins(self):
++        facts = CallFacts()
++        facts.end("transferred")
++        facts.end("caller_hung_up")  # the stream closing after a transfer
++        assert facts.ended_by == "transferred"
++
++    def test_the_context_has_only_what_the_console_needs(self):
++        facts = CallFacts(
++            started=100.0,
++            user_turns=4,
++            handover="transferred",
++            tools_used=["book", "book", "lookup"],
++        )
++        facts.end("silence")
++        with patch.object(call_record.time, "monotonic", return_value=231.4):
++            assert call_record.to_context(facts, CALLER) == {
++                "call": {
++                    "v": 1,
++                    "duration_s": 131,
++                    "ended_by": "silence",
++                    "user_turns": 4,
++                    "handover": "transferred",
++                    "tools": ["book", "lookup"],
++                    "caller": "+91xxxxxx3210",
++                }
++            }
++
++    def test_without_a_valid_caller_the_field_is_left_out(self):
++        assert "caller" not in call_record.to_context(CallFacts(), None)["call"]
++        assert "caller" not in call_record.to_context(CallFacts(), "private")["call"]
++
++    def test_a_call_with_no_recorded_end_counts_as_the_caller_leaving(self):
++        assert call_record.to_context(CallFacts(), None)["call"]["ended_by"] == "caller_hung_up"
++
++
++@pytest.mark.asyncio
++class TestSave:
++    async def test_merges_the_call_into_the_session_context_in_the_sessions_region(self):
++        update = AsyncMock()
++        with (
++            patch.object(call_record, "update_session_context", update),
++            patch.object(call_record, "session_region", AsyncMock(return_value="IN")),
++        ):
++            facts = CallFacts()
++            facts.end("silence")
++            await call_record.save(_session(), facts)
++        sid, context, region = update.await_args.args
++        assert (sid, region) == ("sess-1", "IN")
++        assert set(context) == {"call"}
++        assert context["call"]["caller"] == "+91xxxxxx3210"
++        assert CALLER not in json.dumps(context)  # only the masked number goes into the record
++
++    async def test_a_failure_is_logged_not_raised(self):
++        with (
++            patch.object(
++                call_record, "update_session_context", AsyncMock(side_effect=RuntimeError("down"))
++            ),
++            patch.object(call_record, "session_region", AsyncMock(return_value="IN")),
++            patch.object(call_record, "logger") as logger,
++        ):
++            await call_record.save(_session(), CallFacts())
++        logger.error.assert_called_once()
++
++    async def test_finish_counts_caller_turns_and_notes_the_handover(self):
++        update = AsyncMock()
++        facts = CallFacts()
++        history = [
++            _message(MessageRole.ASSISTANT),
++            _message(MessageRole.USER),
++            _message(MessageRole.USER),
++        ]
++        with (
++            patch.object(call_record, "update_session_context", update),
++            patch.object(call_record, "session_region", AsyncMock(return_value="IN")),
++        ):
++            await call_record.finish(_session(), facts, history, ["lookup"], "declined")
++        call = update.await_args.args[1]["call"]
++        assert (call["user_turns"], call["handover"], call["tools"]) == (2, "declined", ["lookup"])
++
++    async def test_finish_says_none_when_there_was_no_handover(self):
++        update = AsyncMock()
++        with (
++            patch.object(call_record, "update_session_context", update),
++            patch.object(call_record, "session_region", AsyncMock(return_value="IN")),
++        ):
++            await call_record.finish(_session(), CallFacts(), [], [], None)
++        assert update.await_args.args[1]["call"]["handover"] == "none"
++
++
++class _FakeAgent:
++    def __init__(self, events):
++        self._events = events
++
++    async def run_stream(self, context, out_msg_id):
++        for event in self._events:
++            yield event
++
++
++@pytest.mark.asyncio
++async def test_the_agent_processor_notes_which_tools_the_agent_called():
++    events = [
++        StreamEvent(
++            type=StreamEventType.TOOL_CALL_START,
++            details={"tool_id": "t1", "tool_name": "search_doctors"},
++        ),
++        StreamEvent(
++            type=StreamEventType.TOOL_CALL_START, details={"tool_id": "t2"}
++        ),  # no name: ignored
++        StreamEvent(
++            type=StreamEventType.TOOL_CALL_START,
++            details={"tool_id": "t3", "tool_name": "book_appointment"},
++        ),
++        StreamEvent(type=StreamEventType.TEXT, text="Booked."),
++        StreamEvent(type=StreamEventType.DONE),
++    ]
++    processor = EchoAgentProcessor(_FakeAgent(events), session_id="sess-1")
++    processor.push_frame = AsyncMock()
++    frame = LLMContextFrame(
++        context=LLMContext(messages=[{"role": "user", "content": "book me a doctor"}])
++    )
++    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
++    assert processor.tools_used == ["search_doctors", "book_appointment"]
++    assert (
++        processor.get_conversation_history()[-1].content[0].text == "Booked."
++    )  # the reply still works
+diff --git a/med_assist/tests/test_voice_handover.py b/med_assist/tests/test_voice_handover.py
+index d3214fa..7ec3246 100644
+--- a/med_assist/tests/test_voice_handover.py
++++ b/med_assist/tests/test_voice_handover.py
+@@ -347,12 +347,14 @@ class TestTool:
+         tool, state = self._tool(now=_at(10))
+         text = await tool.run(reason="caller_asked")
+         assert state.requested is True and state.reason == "caller_asked"
++        assert state.outcome == "requested"  # until the processor reports the transfer
+         assert "ONE short sentence" in text
+ 
+     async def test_outside_staff_hours_it_declines_and_says_when_they_are_in(self):
+         tool, state = self._tool(now=_at(21))
+         text = await tool.run(reason="caller_asked")
+         assert state.requested is False
++        assert state.outcome == "declined"
+         assert "09:00 to 18:00 (Asia/Kolkata)" in text
+         assert "Do not transfer" in text
+ 
+@@ -399,11 +401,12 @@ async def _send(processor, *frames):
+ @pytest.mark.asyncio
+ class TestProcessor:
+     async def test_transfers_once_the_reply_is_over_and_the_caller_has_heard_it(self):
+-        processor, _, transfer, pushed = _processor()
++        processor, state, transfer, pushed = _processor()
+         await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
+         await asyncio.sleep(0.08)
+         transfer.assert_awaited_once()
+         assert len(pushed.frames) == 2  # frames always pass through
++        assert state.outcome == "transferred"
+ 
+     async def test_does_not_transfer_on_a_pause_before_the_reply_has_ended(self):
+         processor, _, transfer, _ = _processor()
+@@ -452,6 +455,7 @@ class TestProcessor:
+         spoken = [f for f in pushed.frames if isinstance(f, TTSSpeakFrame)]
+         assert [f.text for f in spoken] == [FAILURE_MESSAGE]
+         assert state.requested is False
++        assert state.outcome == "failed"
+ 
+         # The agent asks again straight away. The first attempt's timer must not
+         # fire for this one before its reply has even ended.
+diff --git a/med_assist/tests/test_voice_telephony_number.py b/med_assist/tests/test_voice_telephony_number.py
+index 75501b3..40288ad 100644
+--- a/med_assist/tests/test_voice_telephony_number.py
++++ b/med_assist/tests/test_voice_telephony_number.py
+@@ -102,6 +102,7 @@ class TestAnswerForNumber:
+         assert request.agent_id == AGENT_ID
+         assert request.wid == WORKSPACE
+         assert body.session_context["channel"] == "vobiz"
++        assert body.channel == "voice"  # what the console's Conversations filter calls it
+         assert body.session_context["caller"] == "+919876543210"
+         assert b"<Stream" in response.body
+ 
+diff --git a/voice_telephony_flow.md b/voice_telephony_flow.md
+index 2339a1b..341fc63 100644
+--- a/voice_telephony_flow.md
++++ b/voice_telephony_flow.md
+@@ -671,6 +671,12 @@ To make telephony work reliably:
+   to `/voice/transfer-result/{session_id}`: `completed` hangs up, anything else plays a short English
+   apology. Both URLs carry a signed 10-minute token; the feature is off unless `VOICE_TELEPHONY_SECRET`,
+   `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` and `HOST` are set. See `med_assist/service/voice/handover*.py`.
++- **Call record** (`med_assist/service/voice/call_record.py`): phone sessions use channel `voice`. When the call
++  connects, `mark_conversation_initiated` writes the session row to DynamoDB (without it the console's
++  Conversations page never sees the call). When it ends, the facts only the pipeline knows are merged into
++  the session's `initial_context` under `call`: duration, how it ended (`caller_hung_up`, `silence`,
++  `time_limit`, `transferred`, `error`), caller turns, handover outcome, tools used, and the caller's number
++  masked. The full caller number stays in `initial_context.caller`, as saved by `/answer`.
+ - **Env vars**:
+   - `VOBIZ_AUTH_ID`
+   - `VOBIZ_AUTH_TOKEN`
+-- 
+2.43.0
+

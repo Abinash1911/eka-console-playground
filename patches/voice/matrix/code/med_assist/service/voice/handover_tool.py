@@ -27,6 +27,8 @@ class HandoverState:
 
     requested: bool = False
     reason: Optional[str] = None
+    # For the call record: requested (not finished), transferred, failed or declined.
+    outcome: Optional[str] = None
 
 
 class TransferToHumanTool(BaseTool):
@@ -70,6 +72,7 @@ class TransferToHumanTool(BaseTool):
         if self._state.requested:
             return "A transfer is already in progress. Do not say anything more."
         if not self._settings.is_open(self._now):
+            self._state.outcome = "declined"
             logger.info(
                 "Handover declined — outside staff hours",
                 fn="run",
@@ -83,6 +86,7 @@ class TransferToHumanTool(BaseTool):
             )
         self._state.requested = True
         self._state.reason = reason
+        self._state.outcome = "requested"
         logger.info("Handover requested", fn="run", sid=self._session_id, reason=reason)
         return (
             "The transfer is starting. Say ONE short sentence in the caller's language telling "

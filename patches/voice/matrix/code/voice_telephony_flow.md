@@ -671,6 +671,12 @@ To make telephony work reliably:
   to `/voice/transfer-result/{session_id}`: `completed` hangs up, anything else plays a short English
   apology. Both URLs carry a signed 10-minute token; the feature is off unless `VOICE_TELEPHONY_SECRET`,
   `VOBIZ_AUTH_ID`, `VOBIZ_AUTH_TOKEN` and `HOST` are set. See `med_assist/service/voice/handover*.py`.
+- **Call record** (`med_assist/service/voice/call_record.py`): phone sessions use channel `voice`. When the call
+  connects, `mark_conversation_initiated` writes the session row to DynamoDB (without it the console's
+  Conversations page never sees the call). When it ends, the facts only the pipeline knows are merged into
+  the session's `initial_context` under `call`: duration, how it ended (`caller_hung_up`, `silence`,
+  `time_limit`, `transferred`, `error`), caller turns, handover outcome, tools used, and the caller's number
+  masked. The full caller number stays in `initial_context.caller`, as saved by `/answer`.
 - **Env vars**:
   - `VOBIZ_AUTH_ID`
   - `VOBIZ_AUTH_TOKEN`

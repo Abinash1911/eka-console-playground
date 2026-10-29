@@ -13,6 +13,8 @@ Approved prototype: `docs/prototypes/prototype-phone-agent.html`. Read-state of 
 | 3a | Handover settings on the agent binding (console, applies after 2a) | dev-console | `ee3198d` | built, tested without a database, not pushed |
 | 3b | `transfer_to_human` tool, transfer and result URLs (matrix, applies after 2b) | matrix | `2569ee4` | built, tested with mocks and hand-fed frames, not pushed |
 | 4 | Console pages: register a phone number, connect an agent, handover form (applies after 3a) | dev-console | `ee3198d` | built, rendered and checked in a browser, tested without a database, not pushed |
+| 5a | Record each call as a conversation with a summary (matrix, applies after 3b) | matrix | `2569ee4` | built, tested with mocks, not pushed |
+| 5b | Calls tab on the number's page (console, applies after 4) | dev-console | `ee3198d` | built, rendered in a browser; page tests run, database tests written but not run, not pushed |
 
 ## Patch 1: authenticate the telephony answer webhook and audio socket (matrix)
 
@@ -118,3 +120,34 @@ Not done / not tested
 - Saving against a real database (the tests mock the database layer).
 - Deleting a phone number is the existing soft delete: the number stays reserved, so the same number cannot be registered again in that workspace. Same as other integrations.
 - Where handover is "on" in the console but the platform has no phone secret or Vobiz login set, nothing happens on a call (matrix logs why). The page says so in a hint; it cannot detect it.
+
+## Patch 5: the Calls tab (matrix 0004 + dev-console 0004)
+
+Apply order: matrix `0004` after `0003`; dev-console `0004` after `0003`. Screenshots: `patches/voice/dev-console/screenshots/calls.png`, `calls_mobile.png`.
+
+5a, matrix: a phone call is now a recorded conversation
+- The session is created with `channel="voice"` / referer `vobiz-telephony`, marked as a started conversation when the pipeline starts, and carries the number's `integration_uuid`.
+- `call_record.py` writes a small summary into the session context at the end of the call: `{"call": {"v":1, "duration_s", "ended_by", "user_turns", "handover", "tools", "caller"}}`. `ended_by` is one of caller_hung_up, silence, time_limit, transferred, error. The caller number is masked in the summary, but the full number is still stored in the session's `initial_context.caller` (needed as the agent's hint), so reviewers should decide whether that is acceptable.
+- Handover outcome (none, requested, transferred, failed, declined) comes from the handover tool state; tool names come from the agent processor.
+
+5b, console: Calls tab
+- Setup | Calls tabs on a phone number's page (WhatsApp numbers are unchanged). The table shows when, masked caller, length, outcome, how it ended, staff handover and tools used, with a link to the conversation. Three totals for the page shown: calls, % handed to staff, average length. A call with no saved summary shows "Not recorded".
+- `console_index` now always promotes `call` and `integration_uuid` from the session context, whatever `CONSOLE_INDEX_CONTEXT_KEYS` says. `reads.list_calls` filters on the bound agent and the number, newest first, with the same paging as the conversations list.
+- Only phone numbers have the page (404 for others); the agent must belong to the user's workspace.
+
+Checked
+- Matrix: 747 passed; the same 14 failed and 4 errors as clean `main`, 0 new.
+- Console: 59 tests pass without a database (49 earlier + calls presenter, page and parsing tests). Breaking the always-promote rule fails 2 tests. Screens looked at in a browser, desktop and 390 px wide, no sideways scroll.
+- Both series apply cleanly with `git am --3way` on clean `main` (matrix `2569ee4`, dev-console `ee3198d`).
+
+Not tested
+- `list_calls` tests and the ingest end-to-end test are written but could not run here (they need MySQL and Postgres). Run `python manage.py test console_index` in the team's environment.
+- A real call: nothing has shown the summary actually arriving in Dynamo, going through the projection and appearing on the page.
+- The end-of-call wiring inside the pipeline is not unit-tested (the summary builder is).
+
+For reviewers to decide
+- Sessions indexed before this change lack the promoted keys; a backfill is needed for old calls (there are none on real numbers yet).
+- `list_calls` finds only the current agent's sessions; if a number is moved to another agent, older calls disappear from its tab. There is no index on `context_promoted`; fine for hundreds of calls per agent, revisit for more.
+- Browser (WebRTC) voice sessions are still not recorded in Conversations, the same gap as before.
+- No "resolved" or "booked" outcome: the agent cannot say whether the caller's goal was met.
+- `theme/static/css/dist/styles.css` is a tracked build file and was not regenerated (new classes may need `tailwind build`).

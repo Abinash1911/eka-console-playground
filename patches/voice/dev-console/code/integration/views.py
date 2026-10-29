@@ -4,6 +4,7 @@ import json
 from typing import Optional, get_args
 
 from django.conf import settings
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 from pydantic import ValidationError
@@ -11,7 +12,8 @@ from pydantic import ValidationError
 from agents.models import AgentConfig
 from core.constants import Product
 from core.logging import get_logger
-from integration import webhooks
+from console_index import reads as console_reads
+from integration import calls as call_rows, webhooks
 from integration.models import Integration, ProductIntegration
 from integration.schemas import products as product_configs
 from integration.schemas.products.utils import Callback
@@ -330,6 +332,36 @@ def _render(request, integ: Integration, error: str = "", **extra):
 def detail(request, pk):
     integ = get_object_or_404(Integration, pk=pk, workspace_id=request.workspace_id)
     return _render(request, integ)
+
+
+@require_http_methods(["GET"])
+def calls(request, pk):
+    """Calls answered on a phone number, from the console index."""
+    integ = get_object_or_404(Integration, pk=pk, workspace_id=request.workspace_id)
+    if integ._channel != Integration.CHANNEL_TELEPHONY:
+        raise Http404("Only phone numbers have calls")
+    binding = ProductIntegration.objects.filter(
+        integration=integ, product=Product.AGENT.value
+    ).first()
+    agent = (
+        AgentConfig.objects.filter(agent_id=binding.product_id, workspace_id=request.workspace_id).first()
+        if binding
+        else None
+    )
+    page = {"calls": [], "page": 1, "has_next": False, "has_prev": False}
+    if agent:
+        page = console_reads.list_calls(agent.agent_id, str(integ.uuid), request.GET.get("page", 1))
+    rows = [call_rows.present(s) for s in page["calls"]]
+    return render(request, "integrations/calls.html", {
+        "user_context": request.user_context,
+        "current_page": "integrations",
+        "integration": integ,
+        "is_phone": True,
+        "bound_agent": agent,
+        "rows": rows,
+        "stats": call_rows.stats(rows),
+        "page": page,
+    })
 
 
 @require_http_methods(["POST"])

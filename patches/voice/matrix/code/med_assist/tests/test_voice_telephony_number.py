@@ -102,6 +102,7 @@ class TestAnswerForNumber:
         assert request.agent_id == AGENT_ID
         assert request.wid == WORKSPACE
         assert body.session_context["channel"] == "vobiz"
+        assert body.channel == "voice"  # what the console's Conversations filter calls it
         assert body.session_context["caller"] == "+919876543210"
         assert b"<Stream" in response.body
 

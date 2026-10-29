@@ -86,8 +86,10 @@ class HandoverProcessor(FrameProcessor):
             return
         self._started = True
         if await self._transfer():
+            self._state.outcome = "transferred"
             logger.info("Handover started", fn="_start_transfer", sid=self._session_id)
             return
+        self._state.outcome = "failed"
         logger.error(
             "Handover failed — caller stays with the agent",
             fn="_start_transfer",

@@ -347,12 +347,14 @@ class TestTool:
         tool, state = self._tool(now=_at(10))
         text = await tool.run(reason="caller_asked")
         assert state.requested is True and state.reason == "caller_asked"
+        assert state.outcome == "requested"  # until the processor reports the transfer
         assert "ONE short sentence" in text
 
     async def test_outside_staff_hours_it_declines_and_says_when_they_are_in(self):
         tool, state = self._tool(now=_at(21))
         text = await tool.run(reason="caller_asked")
         assert state.requested is False
+        assert state.outcome == "declined"
         assert "09:00 to 18:00 (Asia/Kolkata)" in text
         assert "Do not transfer" in text
 
@@ -399,11 +401,12 @@ async def _send(processor, *frames):
 @pytest.mark.asyncio
 class TestProcessor:
     async def test_transfers_once_the_reply_is_over_and_the_caller_has_heard_it(self):
-        processor, _, transfer, pushed = _processor()
+        processor, state, transfer, pushed = _processor()
         await _send(processor, LLMFullResponseEndFrame(), BotStoppedSpeakingFrame())
         await asyncio.sleep(0.08)
         transfer.assert_awaited_once()
         assert len(pushed.frames) == 2  # frames always pass through
+        assert state.outcome == "transferred"
 
     async def test_does_not_transfer_on_a_pause_before_the_reply_has_ended(self):
         processor, _, transfer, _ = _processor()
@@ -452,6 +455,7 @@ class TestProcessor:
         spoken = [f for f in pushed.frames if isinstance(f, TTSSpeakFrame)]
         assert [f.text for f in spoken] == [FAILURE_MESSAGE]
         assert state.requested is False
+        assert state.outcome == "failed"
 
         # The agent asks again straight away. The first attempt's timer must not
         # fire for this one before its reply has even ended.

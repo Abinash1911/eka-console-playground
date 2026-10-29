@@ -40,6 +40,7 @@ from pipecat.turns.user_mute import FirstSpeechUserMuteStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from common.utils import get_logger
+from med_assist.utils.conversation_utils import mark_conversation_initiated
 from med_assist.utils.region import session_region
 from med_assist.utils.user_context_utils import resolve_user_context
 from med_assist.config.voice import (
@@ -51,7 +52,7 @@ from med_assist.config.voice import (
 from med_assist.config.websocket import IncomingEventType
 from med_assist.models.agent_config import AgentRuntimeConfig, VoiceAgentConfig
 from med_assist.models.session import SessionCache
-from med_assist.service.voice import caller_context, handover
+from med_assist.service.voice import call_record, caller_context, handover
 from med_assist.service.voice.agent_processor import EchoAgentProcessor, _ist_now
 from med_assist.service.voice.handover_processor import HandoverProcessor
 from med_assist.service.voice.handover_tool import HandoverState, TransferToHumanTool
@@ -210,6 +211,7 @@ async def run_voice_ws_pipeline(
     mulaw 8kHz audio over WebSocket (Vobiz/Plivo protocol).
     """
     session_id = session_cache.session_id
+    facts = call_record.CallFacts()
     # logger.info("run_voice_ws_pipeline entered", fn="run_voice_ws_pipeline", sid=session_id)
     try:
         # 1. Read Plivo/Vobiz start message to get stream_id and call_id
@@ -381,6 +383,9 @@ async def run_voice_ws_pipeline(
                     f"[VOICE] {session_id} : connected : {_ist_now()} : agent={session_cache.agent_id}"
                 )
             logger.info("Pipeline started, sending greeting (Vobiz)", sid=session_id)
+            # The call is a conversation from here on: write its session row so the
+            # console can list it (chat does this on the first user message).
+            await mark_conversation_initiated(session_cache)
             agent_processor._conversation_history.append(
                 Message(
                     msg_id="voice-greeting",
@@ -399,12 +404,15 @@ async def run_voice_ws_pipeline(
                 fn="on_client_disconnected",
                 sid=session_id,
             )
+            # After a transfer Vobiz closes the stream too; that is not the caller hanging up.
+            facts.end("transferred" if handover_state.outcome == "transferred" else "caller_hung_up")
             await task.cancel()
 
         # 13. Idle timeout handler
         @task.event_handler("on_idle_timeout")
         async def on_idle_timeout(task):
             logger.info("Idle timeout reached (Vobiz)", sid=session_id)
+            facts.end("silence")
             await task.queue_frame(TTSSpeakFrame(text=GOODBYE_IDLE_MSG))
             await task.stop_when_done()
 
@@ -418,14 +426,18 @@ async def run_voice_ws_pipeline(
             await asyncio.wait_for(runner.run(task), timeout=MAX_CALL_DURATION_SECS)
         except asyncio.TimeoutError:
             logger.info("Max call duration reached (Vobiz)", sid=session_id)
+            facts.end("time_limit")
             await task.queue_frame(TTSSpeakFrame(text=GOODBYE_MAX_DURATION_MSG))
             await asyncio.sleep(3)
             await task.cancel()
         finally:
-            await _persist_transcript(
-                session_id, agent_processor.get_conversation_history(), session_cache
+            history = agent_processor.get_conversation_history()
+            await _persist_transcript(session_id, history, session_cache)
+            await call_record.finish(
+                session_cache, facts, history, agent_processor.tools_used, handover_state.outcome
             )
     except Exception as e:
+        facts.end("error")
         logger.critical(
             "Voice pipeline crashed (Vobiz)",
             fn="run_voice_ws_pipeline",

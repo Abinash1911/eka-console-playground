@@ -10,6 +10,7 @@
 {% endblock %}
 
 {% block content %}
+{% if is_phone %}{% include 'integrations/_phone_tabs.html' with tab='setup' %}{% endif %}
 {% if error %}
 <div class="mb-5 flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
     <i data-lucide="alert-circle" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
