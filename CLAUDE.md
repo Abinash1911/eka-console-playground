@@ -7,7 +7,8 @@ The user is a product manager, not an engineer. Goal: build features in the real
 
 ## How to answer
 - Keep replies under 100 words unless asked for detail.
-- Plain language, no jargon. For setup, give numbered steps one at a time.
+- Plain language, no jargon. For setup, give numbered steps one at a time, and start every step with the tool it happens in, as "Interakt: ..." or "Console: ...".
+- Interakt's "Secret Key" box on Developer Settings is the API key. The webhook secret is only inside Edit Configuration. Say so in every Interakt setup.
 - Say what was verified and what was not tested. Never imply a live test happened if it did not.
 - If an answer rests on a partial read, say so and name what was not read.
 
