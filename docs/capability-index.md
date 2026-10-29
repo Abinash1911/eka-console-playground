@@ -59,7 +59,10 @@ Question it answers: "do we already have X?" Status: **exists**, **partial**, **
 |---|---|---|
 | Guest and logged-in sessions, partner (BYOA) login, token refresh | exists | matrix auth, `AUTH_CLIENT_CONTRACT.md` |
 | History recovery for logged-in users | exists | matrix `GET session?messages=true` |
-| Voice (WebRTC, telephony), ElevenLabs STT/TTS | exists | matrix `voice`, `voice_ws` |
+| Voice (WebRTC in browser, Vobiz phone line), ElevenLabs STT/TTS, 10 Indian-language codes mapped, same agent/tools as chat, transcript saved | exists | matrix `voice`, `voice_ws`, `service/voice/` |
+| Voice: human handover (phone or chat) | missing (partial: search + flow read) | none found; see claims-to-confirm 11 |
+| Voice: caller ID used to identify the patient | missing (verified in matrix) | number saved in session only; claims 12 |
+| Voice: Sarvam / Deepgram speech | console only, not in matrix | claims 6 |
 | Run a named prompt on a category LLM | exists | matrix `run-prompt` |
 | Campaigns (override opening message / prompt by `campaign_id`) | exists | matrix `campaign_utils.py` |
 | Elicitation (pills, cards) except on voice / WhatsApp | exists | matrix `ELICITATION_UNSUPPORTED_CHANNELS` |
