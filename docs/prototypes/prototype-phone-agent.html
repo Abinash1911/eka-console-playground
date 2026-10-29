@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phone Agent Prototype</title>
+<style>
+:root{--bg:#f8fafc;--panel:#fff;--fg:#0f172a;--muted:#64748b;--line:#e2e8f0;--accent:#5b2ff0;--accent-bg:#efeaff;--ok:#047857;--ok-bg:#d1fae5;--warn:#b45309;--warn-bg:#fef3c7;--bad:#b91c1c;--bad-bg:#fee2e2;--info:#1d4ed8;--info-bg:#dbeafe;--new:#7c3aed}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1220;--panel:#111a2e;--fg:#e5e7eb;--muted:#94a3b8;--line:#24304a;--accent:#8b7bff;--accent-bg:#221a4d;--ok:#34d399;--ok-bg:#0b2a22;--warn:#fbbf24;--warn-bg:#2b2508;--bad:#f87171;--bad-bg:#3a1414;--info:#60a5fa;--info-bg:#10264a;--new:#a78bfa}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,sans-serif}
+.wrap{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+aside{border-right:1px solid var(--line);background:var(--panel);padding:16px 12px}
+aside .brand{font-weight:700;margin:0 8px 18px}
+aside .brand small{display:block;color:var(--muted);font-weight:400;font-size:.75rem}
+aside h6{margin:16px 8px 6px;font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+aside a{display:block;padding:7px 10px;border-radius:8px;color:var(--fg);text-decoration:none;font-size:.92rem}
+aside a.on{background:var(--accent-bg);color:var(--accent);font-weight:600}
+aside a.dim{color:var(--muted)}
+main{padding:24px 28px 64px;max-width:1080px}
+h1{font-size:1.5rem;margin:0}
+.crumb{color:var(--muted);font-size:.85rem;margin:2px 0 16px}
+.banner{background:var(--warn-bg);color:var(--warn);border:1px solid var(--warn);border-radius:10px;padding:8px 12px;font-size:.85rem;margin-bottom:16px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.tabs button{background:none;border:0;padding:10px 14px;font:inherit;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.tabs button[aria-selected=true]{color:var(--accent);border-color:var(--accent);font-weight:600}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+.card h2{font-size:1rem;margin:0 0 2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card .sub{color:var(--muted);font-size:.85rem;margin:0 0 14px}
+.tag{font-size:.68rem;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.t-ex{background:var(--ok-bg);color:var(--ok)}.t-par{background:var(--info-bg);color:var(--info)}.t-new{background:var(--accent-bg);color:var(--new)}
+label{display:block;font-size:.8rem;color:var(--muted);margin:12px 0 4px}
+input[type=text],input[type=tel],input[type=time],select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:70px;resize:vertical}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:5px 12px;font:inherit;font-size:.85rem;cursor:pointer}
+.chip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:#fff}
+.switch{display:flex;align-items:center;gap:10px;margin:8px 0}
+.switch input{width:18px;height:18px;accent-color:var(--accent)}
+.btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:9px 16px;font:inherit;font-weight:600;cursor:pointer}
+.btn.ghost{background:var(--bg);color:var(--fg);border:1px solid var(--line)}
+.pill{display:inline-block;font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:999px}
+.p-ok{background:var(--ok-bg);color:var(--ok)}.p-warn{background:var(--warn-bg);color:var(--warn)}.p-bad{background:var(--bad-bg);color:var(--bad)}.p-info{background:var(--info-bg);color:var(--info)}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:.78rem;padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.call{cursor:pointer}tr.call:hover{background:var(--accent-bg)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.stat b{font-size:1.4rem;display:block}.stat span{color:var(--muted);font-size:.8rem}
+.split{display:grid;grid-template-columns:1.1fr 1fr;gap:16px}
+.bubble{max-width:85%;padding:8px 12px;border-radius:12px;margin:6px 0;font-size:.9rem}
+.b-bot{background:var(--accent-bg);border-bottom-left-radius:2px}
+.b-user{background:var(--bg);border:1px solid var(--line);margin-left:auto;border-bottom-right-radius:2px}
+.b-sys{background:var(--warn-bg);color:var(--warn);font-size:.8rem;margin:8px auto;text-align:center}
+.b-act{background:var(--ok-bg);color:var(--ok);font-size:.8rem;margin:8px auto;text-align:center}
+.who{font-size:.7rem;color:var(--muted);margin-top:8px}
+.phone{border:1px solid var(--line);border-radius:18px;padding:14px;background:var(--bg);min-height:360px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-bottom:14px;align-items:center}
+.note{font-size:.8rem;color:var(--muted);margin-top:8px}
+.hidden{display:none}
+@media(max-width:820px){.wrap{grid-template-columns:1fr}aside{display:none}.row,.split,.stats{grid-template-columns:1fr}main{padding:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<aside>
+  <div class="brand">Eka Console<small>Build health AI agents</small></div>
+  <a class="dim" href="#" onclick="return false">Home</a>
+  <h6>Build</h6>
+  <a class="dim" href="#" onclick="return false">Agents</a>
+  <a class="dim" href="#" onclick="return false">Knowledge</a>
+  <a class="dim" href="#" onclick="return false">Tools</a>
+  <a class="dim" href="#" onclick="return false">Voice</a>
+  <h6>Monitor</h6>
+  <a class="dim" href="#" onclick="return false">Conversations</a>
+  <h6>Integrations</h6>
+  <a class="dim" href="#" onclick="return false">WhatsApp</a>
+  <a class="on" href="#" onclick="return false">Phone (new)</a>
+</aside>
+<main>
+  <h1>Phone agent</h1>
+  <div class="crumb">Home / Integrations / Phone</div>
+  <div class="banner"><b>Prototype.</b> Sample data only. Nothing here is connected or saved. Tags show what exists today: <span class="tag t-ex">Exists</span> <span class="tag t-par">Partly exists</span> <span class="tag t-new">New to build</span></div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="setup">Setup</button>
+    <button role="tab" aria-selected="false" data-tab="calls">Calls</button>
+    <button role="tab" aria-selected="false" data-tab="caller">What the caller hears</button>
+  </div>
+
+  <!-- SETUP -->
+  <section id="setup">
+    <div class="card">
+      <h2>1. Phone number <span class="tag t-new">New to build</span></h2>
+      <p class="sub">The number patients call. Today this is set by hand in the phone provider's dashboard.</p>
+      <div class="chips" role="group" aria-label="How to connect">
+        <button class="chip" aria-pressed="true" data-group="conn">Forward our existing clinic number</button>
+        <button class="chip" aria-pressed="false" data-group="conn">Use a new number</button>
+      </div>
+      <div class="row">
+        <div><label for="num">Clinic number patients dial</label><input id="num" type="tel" value="+91 98765 43210"></div>
+        <div><label for="agent">Agent that answers</label>
+          <select id="agent"><option>Reliance Whatsapp</option><option>Clinic Front Desk</option><option>Ab's Agent</option></select></div>
+      </div>
+      <p class="note">Status: <span class="pill p-warn">Waiting for forwarding</span> Set your number to forward to <b>+91 80000 12345</b>, then press Check connection.</p>
+      <p><button class="btn ghost" id="check">Check connection</button> <span id="checkmsg" class="note"></span></p>
+    </div>
+
+    <div class="card">
+      <h2>2. Language and voice <span class="tag t-par">Partly exists</span></h2>
+      <p class="sub">Language and voice settings exist per agent. Today the call server accepts only ElevenLabs.</p>
+      <label>Languages the agent should speak</label>
+      <div class="chips" id="langs">
+        <button class="chip" aria-pressed="true">Hindi</button><button class="chip" aria-pressed="true">English</button>
+        <button class="chip" aria-pressed="false">Tamil</button><button class="chip" aria-pressed="false">Telugu</button>
+        <button class="chip" aria-pressed="false">Kannada</button><button class="chip" aria-pressed="false">Malayalam</button>
+        <button class="chip" aria-pressed="false">Bengali</button><button class="chip" aria-pressed="false">Marathi</button>
+        <button class="chip" aria-pressed="false">Gujarati</button><button class="chip" aria-pressed="false">Punjabi</button>
+      </div>
+      <div class="switch"><input type="checkbox" id="auto" checked><label for="auto" style="margin:0;color:var(--fg)">Detect the caller's language and reply in it</label></div>
+      <div class="row">
+        <div><label for="voice">Voice</label><select id="voice"><option>Warm female (Hindi, English)</option><option>Calm male (Hindi, English)</option></select></div>
+        <div><label for="speed">Speaking speed</label><select id="speed"><option>Normal</option><option>Slightly slower</option></select></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3. Greeting <span class="tag t-ex">Exists</span></h2>
+      <p class="sub">The agent's opening message is reused for calls.</p>
+      <label for="greet">What the agent says first</label>
+      <textarea id="greet">Namaste, you have reached Sunrise Clinic. I'm the virtual assistant. This call may be recorded to help you. How can I help you today?</textarea>
+      <div class="switch"><input type="checkbox" id="rec" checked><label for="rec" style="margin:0;color:var(--fg)">Tell callers the call may be recorded</label></div>
+    </div>
+
+    <div class="card">
+      <h2>4. Hand over to a person <span class="tag t-new">New to build</span></h2>
+      <p class="sub">When the agent should pass the call to your staff.</p>
+      <div class="switch"><input type="checkbox" id="ho" checked><label for="ho" style="margin:0;color:var(--fg)">Allow hand over to a person</label></div>
+      <div class="row">
+        <div><label for="hphone">Staff phone number (not the clinic's public number)</label><input id="hphone" type="tel" value="+91 99999 11111"></div>
+        <div><label for="hfallback">If no one answers</label><select id="hfallback"><option>Take a callback request and text the clinic</option><option>Tell the caller we will call back</option></select></div>
+      </div>
+      <div class="row">
+        <div><label for="from">Staff available from</label><input id="from" type="time" value="09:00"></div>
+        <div><label for="to">Until</label><input id="to" type="time" value="18:00"></div>
+      </div>
+      <label>Hand over when</label>
+      <div class="switch"><input type="checkbox" checked id="w1"><label for="w1" style="margin:0;color:var(--fg)">The caller asks for a person, in any language</label></div>
+      <div class="switch"><input type="checkbox" checked id="w2"><label for="w2" style="margin:0;color:var(--fg)">The agent did not understand twice in a row</label></div>
+      <div class="switch"><input type="checkbox" checked id="w3"><label for="w3" style="margin:0;color:var(--fg)">Emergency words are heard (also gives the emergency number)</label></div>
+      <div class="switch"><input type="checkbox" id="w4"><label for="w4" style="margin:0;color:var(--fg)">The caller sounds upset or frustrated</label></div>
+      <p class="note">Before transferring, the agent tells the caller, and passes a short summary to the staff member by text.</p>
+    </div>
+
+    <div class="card">
+      <h2>5. Test <span class="tag t-par">Partly exists</span></h2>
+      <p class="sub">A small browser test page exists for developers. This would be a button in the console.</p>
+      <div class="split">
+        <div>
+          <p><button class="btn" id="testbtn">Start a test call</button></p>
+          <p class="note">Or ring the test number from your own phone: <b>+91 80000 12345</b></p>
+        </div>
+        <div class="phone" id="phone" aria-live="polite"><div class="who">Press Start a test call to see a sample.</div></div>
+      </div>
+    </div>
+    <p><button class="btn">Save</button> <button class="btn ghost">Cancel</button></p>
+  </section>
+
+  <!-- CALLS -->
+  <section id="calls" class="hidden">
+    <div class="stats">
+      <div class="stat"><b>124</b><span>Calls this week</span></div>
+      <div class="stat"><b>71%</b><span>Resolved by the agent</span></div>
+      <div class="stat"><b>18%</b><span>Handed over to staff</span></div>
+      <div class="stat"><b>1.2 s</b><span>Average reply delay</span></div>
+    </div>
+    <p class="note" style="margin-top:-6px">Numbers are made up. <span class="tag t-new">New to build</span> The transcripts are already saved after each call; the list and summaries are the new part.</p>
+    <div class="card" style="padding:0;overflow:auto">
+      <table>
+        <thead><tr><th>Caller</th><th>Time</th><th>Length</th><th>Language</th><th>Outcome</th><th>Summary</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="card hidden" id="detail">
+      <h2 id="dtitle"></h2>
+      <p class="sub" id="dsub"></p>
+      <div class="split">
+        <div id="dtrans"></div>
+        <div>
+          <label>Summary</label><p id="dsum" style="margin:0"></p>
+          <label>Actions taken</label><div id="dact"></div>
+          <label>Handover</label><div id="dho"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CALLER -->
+  <section id="caller" class="hidden">
+    <div class="card">
+      <h2>A good call, start to finish <span class="tag t-new">Design</span></h2>
+      <p class="sub">What the patient hears. It decides what we build.</p>
+      <div class="phone" style="min-height:0">
+        <div class="who">Agent</div><div class="bubble b-bot">Namaste, you have reached Sunrise Clinic. This call may be recorded. How can I help?</div>
+        <div class="who" style="text-align:right">Caller</div><div class="bubble b-user">मुझे कल डॉक्टर शर्मा से मिलना है।</div>
+        <div class="who">Agent (replies in Hindi)</div><div class="bubble b-bot">जी, ज़रूर। कल सुबह 10 बजे या शाम 5 बजे का समय खाली है। कौन सा ठीक रहेगा?</div>
+        <div class="who" style="text-align:right">Caller</div><div class="bubble b-user">शाम 5 बजे।</div>
+        <div class="bubble b-bot">Dr. Sharma, कल शाम 5 बजे। क्या मैं बुक कर दूँ?</div>
+        <div class="bubble b-user">हाँ।</div>
+        <div class="bubble b-act">Action: booked appointment through our tools</div>
+        <div class="bubble b-bot">बुक हो गया। आपको अभी WhatsApp पर पुष्टि भेज रही हूँ। और कुछ?</div>
+        <div class="bubble b-user">मुझे किसी से बात करनी है, बिल के बारे में।</div>
+        <div class="bubble b-sys">Agent connects you to staff. Caller hears: "I'm connecting you to our team. I've shared what we discussed so you don't have to repeat."</div>
+      </div>
+      <p class="note">Rules behind it: confirm before acting, repeat back names and times, one question at a time, "talk to a person" always works, message after any booking, emergency words go to a person or the emergency number.</p>
+    </div>
+  </section>
+</main>
+</div>
+<script>
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+$$('.tabs button').forEach(b=>b.addEventListener('click',()=>{
+  $$('.tabs button').forEach(x=>x.setAttribute('aria-selected',x===b));
+  ['setup','calls','caller'].forEach(id=>$('#'+id).classList.toggle('hidden',id!==b.dataset.tab));
+}));
+$$('#langs .chip').forEach(c=>c.addEventListener('click',()=>c.setAttribute('aria-pressed',c.getAttribute('aria-pressed')!=='true')));
+$$('[data-group=conn]').forEach(c=>c.addEventListener('click',()=>$$('[data-group=conn]').forEach(x=>x.setAttribute('aria-pressed',x===c))));
+$('#check').addEventListener('click',()=>{$('#checkmsg').textContent='Prototype: in the real page this would place a check call and report the result.'});
+const calls=[
+ {n:'+91 98xxx 21034',t:'Today 10:42',len:'2:10',lang:'Hindi',o:['Booked','ok'],s:'Booked Dr. Sharma for tomorrow 5 pm. Confirmation sent.',
+  tr:[['b','Namaste, you have reached Sunrise Clinic. How can I help?'],['u','मुझे कल डॉक्टर शर्मा से मिलना है।'],['b','जी, कल सुबह 10 या शाम 5 बजे खाली है।'],['u','शाम 5 बजे।'],['a','Booked appointment']],act:['Looked up slots','Booked appointment','Sent WhatsApp confirmation'],ho:'Not needed'},
+ {n:'+91 99xxx 55012',t:'Today 10:15',len:'3:45',lang:'English',o:['Handed over','info'],s:'Billing question. Agent could not answer; transferred to staff, who answered.',
+  tr:[['b','Hello, how can I help?'],['u','I was charged twice for my last visit.'],['b','I am sorry about that. I cannot see billing. Shall I connect you to our team?'],['u','Yes please.'],['s','Transferred to staff +91 99999 11111, answered in 8 seconds']],act:['Shared summary with staff by text'],ho:'Answered by staff in 8 s'},
+ {n:'+91 97xxx 80345',t:'Today 09:58',len:'0:48',lang:'Tamil',o:['Resolved','ok'],s:'Asked clinic timings. Answered from the clinic knowledge base.',
+  tr:[['u','கிளினிக் எத்தனை மணிக்கு திறக்கும்?'],['b','காலை 9 மணி முதல் மாலை 6 மணி வரை.']],act:['Answered from knowledge base'],ho:'Not needed'},
+ {n:'+91 98xxx 70211',t:'Yesterday 17:20',len:'1:30',lang:'Hindi',o:['Missed handover','bad'],s:'Caller asked for a person after hours. Callback requested.',
+  tr:[['u','मुझे डॉक्टर से बात करनी है।'],['b','अभी क्लिनिक बंद है। क्या मैं कॉलबैक नोट कर लूँ?'],['u','हाँ।'],['s','No staff available (after hours). Callback request sent to clinic.']],act:['Created callback request'],ho:'After hours: callback created'},
+ {n:'+91 90xxx 44120',t:'Yesterday 16:05',len:'0:22',lang:'-',o:['Dropped','warn'],s:'Caller hung up during the greeting.',tr:[['b','Namaste, you have reached Sunrise Clinic...'],['s','Caller hung up']],act:[],ho:'Not needed'}];
+const pillc={ok:'p-ok',info:'p-info',bad:'p-bad',warn:'p-warn'};
+$('#rows').innerHTML=calls.map((c,i)=>`<tr class="call" tabindex="0" data-i="${i}"><td>${c.n}</td><td>${c.t}</td><td>${c.len}</td><td>${c.lang}</td><td><span class="pill ${pillc[c.o[1]]}">${c.o[0]}</span></td><td>${c.s}</td></tr>`).join('');
+function show(i){const c=calls[i];$('#detail').classList.remove('hidden');$('#dtitle').textContent=c.n+'  ·  '+c.o[0];$('#dsub').textContent=c.t+' · '+c.len+' · '+c.lang;
+ $('#dtrans').innerHTML=c.tr.map(([k,t])=>k==='b'?`<div class="who">Agent</div><div class="bubble b-bot">${t}</div>`:k==='u'?`<div class="who" style="text-align:right">Caller</div><div class="bubble b-user">${t}</div>`:k==='a'?`<div class="bubble b-act">Action: ${t}</div>`:`<div class="bubble b-sys">${t}</div>`).join('');
+ $('#dsum').textContent=c.s;$('#dact').innerHTML=c.act.length?c.act.map(a=>`<div class="pill p-ok" style="margin:2px 4px 2px 0">${a}</div>`).join(''):'<span class="note">None</span>';$('#dho').textContent=c.ho;
+ $('#detail').scrollIntoView({behavior:'smooth',block:'nearest'});}
+$$('tr.call').forEach(r=>{r.addEventListener('click',()=>show(r.dataset.i));r.addEventListener('keydown',e=>{if(e.key==='Enter')show(r.dataset.i)})});
+$('#testbtn').addEventListener('click',()=>{
+ const ph=$('#phone');ph.innerHTML='';
+ const steps=[['b','Namaste, you have reached Sunrise Clinic. How can I help?'],['u','I need to see a doctor tomorrow.'],['b','Sure. Which doctor would you like to see?'],['s','Test call ended (sample)']];
+ let i=0;(function next(){if(i>=steps.length)return;const [k,t]=steps[i++];
+  ph.insertAdjacentHTML('beforeend',k==='b'?`<div class="who">Agent</div><div class="bubble b-bot">${t}</div>`:k==='u'?`<div class="who" style="text-align:right">You</div><div class="bubble b-user">${t}</div>`:`<div class="bubble b-sys">${t}</div>`);
+  setTimeout(next,700);})();
+});
+</script>
+</body>
+</html>
