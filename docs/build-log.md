@@ -104,3 +104,6 @@ Matrix 0004: calls are recorded as conversations with a masked-caller summary (d
 
 ## 2026-10-29: voice patch 6 built (Test this number card)
 Console only. Chose a readiness card with a tap-to-call link over a button that places a call (outbound calling and the browser voice path were both out of scope or a different path). 62 integration tests pass without a database; two breakages caught; rendered and looked at. Nothing pushed to company repos.
+
+## 2026-10-30: corrections (WhatsApp richer messages)
+Earlier note said carousel and Flow answers were "not found". After reading more: doot `src/services/send.py` already builds template carousels, and `interakt_tp_provider.parse_webhook` already parses Flow replies (`nfm_reply`). Bridge still has no caller for the Flow, link and location senders (partial). Doc `docs/whatsapp-richer-messages.md` updated. Claim 21 reworded below.
