@@ -16,3 +16,6 @@ Open work, newest decisions first. Move an item to `docs/build-log.md` when done
 
 ## Reliance (WhatsApp on Interakt)
 - [ ] Waiting on the customer: Interakt plan and Haptik details; their Interakt still sends no webhook.
+
+## WhatsApp richer messages
+- [ ] Decide which to build first (see `docs/whatsapp-richer-messages.md`): link button + location (small), Flows (forms), carousel, payments. Needs answer on claims 21 and 22.
