@@ -6,7 +6,7 @@ These rules load every session. Keep them short; remove any that stop helping.
 The user is a product manager, not an engineer. Goal: build features in the real repos' own language, style and quality so developers can review and ship with little rework. Reduce developer time.
 
 ## How to answer
-- Keep replies under 100 words unless asked for detail.
+- Every reply is under 100 words, in pointers, always. No "unless asked" exception: if more is needed, put it in a file under `docs/` and link it.
 - Plain language, no jargon. For setup, give numbered steps one at a time, and start every step with the tool it happens in, as "Interakt: ..." or "Console: ...".
 - Interakt's "Secret Key" box on Developer Settings is the API key. The webhook secret is only inside Edit Configuration. Say so in every Interakt setup.
 - Say what was verified and what was not tested. Never imply a live test happened if it did not.
