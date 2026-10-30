@@ -107,3 +107,6 @@ Console only. Chose a readiness card with a tap-to-call link over a button that 
 
 ## 2026-10-30: corrections (WhatsApp richer messages)
 Earlier note said carousel and Flow answers were "not found". After reading more: doot `src/services/send.py` already builds template carousels, and `interakt_tp_provider.parse_webhook` already parses Flow replies (`nfm_reply`). Bridge still has no caller for the Flow, link and location senders (partial). Doc `docs/whatsapp-richer-messages.md` updated. Claim 21 reworded below.
+
+## 2026-10-30: carousel patch built (doot)
+Cards the agent marks horizontal, with images, now go out as Meta's interactive media carousel on `interakt_tp` numbers; everything else and any 4xx falls back to the list. 121 doot tests pass (19 new), six breakages caught. Read Meta's carousel page via curl (WebFetch/search could not): format confirmed, so claim 23 is now verified for Meta; Interakt pass-through still unconfirmed. Not sent on a real number. Nothing pushed to the company repo.

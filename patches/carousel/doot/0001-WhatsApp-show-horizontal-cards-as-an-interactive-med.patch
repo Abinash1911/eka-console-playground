@@ -1,0 +1,527 @@
+From 6dd95175da7eb394414cc662881986458c3905bd Mon Sep 17 00:00:00 2001
+From: Abinash <abinash.haldorai@eka.care>
+Date: Fri, 30 Oct 2026 14:54:00 +0000
+Subject: [PATCH] WhatsApp: show horizontal cards as an interactive media
+ carousel
+
+When the agent asks for a horizontal card layout (`_meta.orientation`) and every
+card has an image, send the cards as Meta's interactive media carousel on
+providers that can (interakt_tp). Each card's button is a quick reply whose id is
+the list row id, so a tap resolves through the existing list path.
+
+Anything else stays as before: vertical layout, a card without an https image,
+fewer than 2 or more than 10 cards, or a provider without carousel support send
+the list; a 4xx from WhatsApp falls back to the list, a 5xx is raised.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ app/bridge/base.py                            |  30 ++-
+ app/bridge/choices.py                         |  58 ++++++
+ app/bridge/medassist/bridge.py                |   1 +
+ app/bridge/medassist/elicitation.py           |   3 +
+ app/bridge/medassist/presenter.py             |  23 ++-
+ app/services/clients/medassist_client.py      |   1 +
+ .../whatsapp/providers/base_provider.py       |  10 +
+ .../providers/interakt_tp_provider.py         |  24 +++
+ tests/test_carousel.py                        | 177 ++++++++++++++++++
+ 9 files changed, 325 insertions(+), 2 deletions(-)
+ create mode 100644 tests/test_carousel.py
+
+diff --git a/app/bridge/base.py b/app/bridge/base.py
+index f82077c..9cdfa8f 100644
+--- a/app/bridge/base.py
++++ b/app/bridge/base.py
+@@ -64,6 +64,22 @@ class BaseWhatsAppApp(ABC):
+         """Send plain text via the underlying WhatsApp provider."""
+         await self.whatsapp.send_text(to, text)
+ 
++    async def _try_carousel(self, to: str, body: str, slides: list[ch.Slide], token: str) -> bool:
++        """Send the slides as a carousel. False if WhatsApp refused it, so the list goes out instead."""
++        try:
++            await self.whatsapp.send_carousel(to, body, ch.carousel_cards(slides, token))
++        except httpx.HTTPStatusError as e:
++            if not 400 <= e.response.status_code < 500:
++                raise
++            self.logger.warning(
++                "carousel_send_fallback_list",
++                status=e.response.status_code,
++                response_body=e.response.text[:200],
++            )
++            return False
++        self.logger.info("carousel_sent", cards=len(slides))
++        return True
++
+     async def send_choices(
+         self,
+         to: str,
+@@ -74,8 +90,10 @@ class BaseWhatsAppApp(ABC):
+         button: str,
+         offset: int = 0,
+         extra_rows: tuple = (),
++        slides: tuple = (),
+     ) -> None:
+-        """Send choices as reply buttons when they fit, else one page of a list.
++        """Send choices as a carousel (cards with images, where the provider can), else as
++        reply buttons when they fit, else one page of a list.
+ 
+         Row ids carry ``token`` and the option's index in the full list, so a tap on
+         any page resolves without stored state (see ``app.bridge.choices``). If the
+@@ -86,6 +104,16 @@ class BaseWhatsAppApp(ABC):
+             await self.send_text(to, body)
+             body = "Please choose an option:"
+ 
++        if (
++            slides
++            and not offset
++            and not extra_rows
++            and getattr(self.whatsapp, "supports_carousel", False)
++            and ch.fits_carousel(list(slides), body)
++            and await self._try_carousel(to, body, list(slides), token)
++        ):
++            return
++
+         as_buttons = not offset and not extra_rows and ch.fits_buttons(choices, body)
+         try:
+             if as_buttons:
+diff --git a/app/bridge/choices.py b/app/bridge/choices.py
+index 2d3f730..e0ac2b3 100644
+--- a/app/bridge/choices.py
++++ b/app/bridge/choices.py
+@@ -17,6 +17,12 @@ REPLY_BUTTONS = 3
+ BUTTONS_BODY_MAX = 1024
+ LIST_BODY_MAX = 4096
+ 
++# Interactive media carousel (Meta): 2 to 10 cards, each with an image, a short text and one button.
++CAROUSEL_MIN = 2
++CAROUSEL_MAX = 10
++CAROUSEL_BODY_MAX = 1024
++CARD_TEXT_MAX = 160
++
+ MORE = "m"
+ DATES = "d"
+ 
+@@ -35,6 +41,16 @@ class Choice:
+     section: str = ""
+ 
+ 
++@dataclass(frozen=True)
++class Slide:
++    """One carousel card: an image, its text and the label of its one button."""
++
++    image: str
++    title: str
++    detail: str = ""
++    button: str = "Select"
++
++
+ @dataclass(frozen=True)
+ class Tap:
+     token: str
+@@ -185,3 +201,45 @@ def numbered(choices: list[Choice]) -> str:
+         detail = f" — {c.description}" if c.description and c.description != c.title else ""
+         lines.append(f"{i}. {c.title}{detail}")
+     return "\n".join(lines)
++
++
++def fits_carousel(slides: list[Slide], body: str) -> bool:
++    """A carousel needs 2 to 10 cards that each have an image, and a body short enough."""
++    return (
++        CAROUSEL_MIN <= len(slides) <= CAROUSEL_MAX
++        and all(s.image.startswith("https://") and s.title for s in slides)
++        and _width(body) <= CAROUSEL_BODY_MAX
++    )
++
++
++def card_text(slide: Slide) -> str:
++    """Bold title, then the detail on the next line, within WhatsApp's 160 characters."""
++    title = clip(slide.title, CARD_TEXT_MAX - 2)
++    head = f"*{title}*"
++    room = CARD_TEXT_MAX - _width(head) - 1
++    detail = clip(slide.detail, room) if slide.detail and room > 1 else ""
++    return f"{head}\n{detail}" if detail else head
++
++
++def carousel_cards(slides: list[Slide], token: str) -> list[dict]:
++    """Slides as Meta carousel cards; each button's id is ``{token}.{n}``, like a list row."""
++    return [
++        {
++            "card_index": i,
++            "type": "cta_url",
++            "header": {"type": "image", "image": {"link": slide.image}},
++            "body": {"text": card_text(slide)},
++            "action": {
++                "buttons": [
++                    {
++                        "type": "quick_reply",
++                        "quick_reply": {
++                            "id": f"{token}.{i}",
++                            "title": clip(slide.button, BUTTON_MAX),
++                        },
++                    }
++                ]
++            },
++        }
++        for i, slide in enumerate(slides)
++    ]
+diff --git a/app/bridge/medassist/bridge.py b/app/bridge/medassist/bridge.py
+index fd31fa5..18ba3ad 100644
+--- a/app/bridge/medassist/bridge.py
++++ b/app/bridge/medassist/bridge.py
+@@ -705,6 +705,7 @@ class MedassistBridge(BaseWhatsAppApp):
+             button=lst.button,
+             offset=offset,
+             extra_rows=lst.extra_rows,
++            slides=lst.slides,
+         )
+ 
+     async def _clear_pending(self, incoming: IncomingMessage, ctx: dict) -> dict:
+diff --git a/app/bridge/medassist/elicitation.py b/app/bridge/medassist/elicitation.py
+index 6b7cf9e..febf310 100644
+--- a/app/bridge/medassist/elicitation.py
++++ b/app/bridge/medassist/elicitation.py
+@@ -60,6 +60,7 @@ class PendingElicitation:
+     date_slots: dict = field(default_factory=dict)                     # date (YYYY-MM-DD) → list[str] of slot times
+     flat_slots: list[dict] = field(default_factory=list)        # [{date, slot_time, doctor_name, hospital_name, doctor_id, hospital_id}]
+     page_offset: int = 0                                        # list page reached by a typed "more"
++    orientation: str = ""                                       # card layout the agent asked for ("horizontal" = carousel)
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -206,6 +207,7 @@ def pending_to_dict(p: PendingElicitation) -> dict:
+         "date_slots": p.date_slots,
+         "flat_slots": p.flat_slots,
+         "page_offset": p.page_offset,
++        "orientation": p.orientation,
+     }
+ 
+ 
+@@ -256,4 +258,5 @@ def pending_from_dict(d: dict) -> PendingElicitation:
+         # The previous build's slot_page_offset paged flat_slots 4 at a time; it means
+         # nothing for these lists, so it is not carried over.
+         page_offset=d.get("page_offset", 0),
++        orientation=d.get("orientation", ""),
+     )
+diff --git a/app/bridge/medassist/presenter.py b/app/bridge/medassist/presenter.py
+index bf15c4b..15c85b4 100644
+--- a/app/bridge/medassist/presenter.py
++++ b/app/bridge/medassist/presenter.py
+@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
+ from datetime import datetime
+ from typing import Any, Optional
+ 
+-from app.bridge.choices import Choice, dates_row, from_label, list_token
++from app.bridge.choices import Choice, Slide, dates_row, from_label, list_token
+ from app.bridge.medassist.elicitation import (
+     DoctorOption,
+     PendingElicitation,
+@@ -28,6 +28,7 @@ class ChoiceList:
+     button: str
+     body: str  # used when the bridge moves to this list on its own
+     extra_rows: tuple = ()
++    slides: tuple = ()  # cards with an image, for a provider that can show them as a carousel
+ 
+ 
+ # ---------------------------------------------------------------------------
+@@ -158,6 +159,7 @@ def _cards_list(p: PendingElicitation) -> ChoiceList:
+ 
+     return ChoiceList(
+         step=OPTION,
++        slides=_slides(p, raw),
+         choices=[from_label(c.title, subtext(c.card_id)) for c in p.cards],
+         items=p.cards,
+         token=list_token(p.component, p.message_id, p.tool_id, *(c.card_id for c in p.cards)),
+@@ -166,6 +168,25 @@ def _cards_list(p: PendingElicitation) -> ChoiceList:
+     )
+ 
+ 
++def _slides(p: PendingElicitation, raw: dict) -> tuple:
++    """The cards as carousel slides, when the agent asked for a horizontal layout and
++    every card has an image (the same ``img`` the web widget draws)."""
++    if p.orientation != "horizontal":
++        return ()
++    slides = []
++    for card in p.cards:
++        data = raw.get(card.card_id) or {}
++        slides.append(
++            Slide(
++                image=str(data.get("img") or ""),
++                title=card.title,
++                detail=str(data.get("description") or data.get("tags") or data.get("tags_text") or data.get("banner_text") or ""),
++                button=str((data.get("primary_cta") or {}).get("title") or "Select"),
++            )
++        )
++    return tuple(slides) if all(s.image for s in slides) else ()
++
++
+ def _doctors_list(p: PendingElicitation) -> ChoiceList:
+     return ChoiceList(
+         step=DOCTOR,
+diff --git a/app/services/clients/medassist_client.py b/app/services/clients/medassist_client.py
+index 18d510a..0684f10 100644
+--- a/app/services/clients/medassist_client.py
++++ b/app/services/clients/medassist_client.py
+@@ -164,6 +164,7 @@ def _parse_elicitation_data(message_id: str, data: dict) -> MedassistResponse:
+                 cards=pending_cards,
+                 input_data=inp,
+                 schema_fields=schema_fields,
++                orientation=meta.get("orientation") or "",
+             )
+         else:
+             text = _card_summary(inp)
+diff --git a/app/services/whatsapp/providers/base_provider.py b/app/services/whatsapp/providers/base_provider.py
+index 2f2b5b0..201b012 100644
+--- a/app/services/whatsapp/providers/base_provider.py
++++ b/app/services/whatsapp/providers/base_provider.py
+@@ -33,6 +33,10 @@ class WhatsAppProviderBase(ABC):
+     MAX_LIST_SECTIONS = 10
+     MAX_LIST_ROWS = 10
+ 
++    # True where ``send_carousel`` really sends one. Unlike the other rich sends there is
++    # no text fallback here: the caller shows the same choices as a list instead.
++    supports_carousel = False
++
+     @staticmethod
+     def cap_list_sections(
+         sections: List[Dict[str, Any]],
+@@ -233,6 +237,12 @@ class WhatsAppProviderBase(ABC):
+             to, f"{body_text}\n\n📍 Share your location via the 📎 attachment menu."
+         )
+ 
++    async def send_carousel(
++        self, to: str, body_text: str, cards: List[Dict[str, Any]]
++    ) -> Dict[str, Any]:
++        """Send an interactive media carousel of Meta ``cards`` (see ``choices.carousel_cards``)."""
++        raise NotImplementedError("send_carousel not implemented for this provider")
++
+     async def send_flow(
+         self,
+         to: str,
+diff --git a/app/services/whatsapp/providers/interakt_tp_provider.py b/app/services/whatsapp/providers/interakt_tp_provider.py
+index db8a837..0602634 100644
+--- a/app/services/whatsapp/providers/interakt_tp_provider.py
++++ b/app/services/whatsapp/providers/interakt_tp_provider.py
+@@ -27,6 +27,8 @@ logger = get_logger(__name__)
+ class InteraktTPWhatsAppProvider(WhatsAppProviderBase):
+     """Interakt tech-partner provider (Meta-Graph payloads via amped-express)."""
+ 
++    supports_carousel = True
++
+     def __init__(
+         self,
+         isv_token: str,
+@@ -481,6 +483,28 @@ class InteraktTPWhatsAppProvider(WhatsAppProviderBase):
+         }
+         return await self._post_message(payload, "cta_url")
+ 
++    async def send_carousel(
++        self, to: str, body_text: str, cards: List[Dict[str, Any]]
++    ) -> Dict[str, Any]:
++        """Send an interactive media carousel (``interactive.type=carousel``).
++
++        2 to 10 ``cards``, each with an image header, text and one button; every card
++        needs the same button type and count. Free-form, so only inside the 24h window.
++        The main message takes no header or footer.
++        """
++        payload = {
++            "messaging_product": "whatsapp",
++            "recipient_type": "individual",
++            "to": self._normalize_to(to),
++            "type": "interactive",
++            "interactive": {
++                "type": "carousel",
++                "body": {"text": body_text},
++                "action": {"cards": cards},
++            },
++        }
++        return await self._post_message(payload, "carousel")
++
+     async def send_location_request(self, to: str, body_text: str) -> Dict[str, Any]:
+         """Ask the user to share their location (``interactive.type=location_request_message``).
+ 
+diff --git a/tests/test_carousel.py b/tests/test_carousel.py
+new file mode 100644
+index 0000000..0a1f851
+--- /dev/null
++++ b/tests/test_carousel.py
+@@ -0,0 +1,177 @@
++"""Cards shown as a WhatsApp interactive media carousel, and the fallbacks to a list."""
++import httpx
++import pytest
++
++from app.bridge import choices as ch
++from app.bridge.medassist import presenter
++from app.bridge.medassist.bridge import MedassistBridge
++from app.bridge.medassist.elicitation import (
++    PendingCard,
++    PendingElicitation,
++    pending_from_dict,
++    pending_to_dict,
++)
++from app.services.clients.medassist_client import MedassistResponse, _parse_elicitation_data
++from app.services.whatsapp.providers.base_provider import WhatsAppProviderBase
++from app.services.whatsapp.providers.interakt_tp_provider import InteraktTPWhatsAppProvider
++from tests.fakes import AGENT_ID, FakeProvider, tap, text
++from tests.test_provider_flows import recording
++
++IMG = "https://cdn.example/{}.jpg"
++
++
++def raw_cards(n=3, **over):
++    return [
++        {
++            "card_id": f"c{i}", "title": f"Package {i}", "img": IMG.format(i),
++            "description": f"Detail {i}", "primary_cta": {"cta_id": "pick", "title": "Book now", "tool_result": {"pick": i}},
++            **over,
++        }
++        for i in range(n)
++    ]
++
++
++def pending(cards=None, orientation="horizontal"):
++    cards = raw_cards() if cards is None else cards
++    return PendingElicitation(
++        message_id="m1", tool_id="t1", tool_name="pick_package", component="card", status="progress",
++        cards=[PendingCard(c["card_id"], c["title"], (c.get("primary_cta") or {}).get("tool_result")) for c in cards],
++        input_data={"text": "Choose a package", "cards": cards}, schema_fields=["pick"], orientation=orientation,
++    )
++
++
++class CarouselProvider(FakeProvider):
++    supports_carousel = True
++
++    def __init__(self, error: Exception | None = None):
++        super().__init__()
++        self.error = error
++
++    async def send_carousel(self, to, body_text, cards):
++        if self.error:
++            raise self.error
++        self.sent.append(("carousel", {"to": to, "body": body_text, "cards": cards}))
++
++
++def refusal(status):
++    request = httpx.Request("POST", "https://amped.test/p/messages")
++    return httpx.HTTPStatusError("x", request=request, response=httpx.Response(status, text="bad", request=request))
++
++
++def bridge_for(provider, session_manager, client):
++    return MedassistBridge(
++        whatsapp=provider, session_manager=session_manager, bot_key="medassist",
++        medassist_client=client, agent_id=AGENT_ID,
++    )
++
++
++# -- building the message ----------------------------------------------------
++
++def test_card_text_is_bold_title_then_detail_within_160():
++    assert ch.card_text(ch.Slide("https://i/1.jpg", "Full body check", "Blood, urine, ECG")) == "*Full body check*\nBlood, urine, ECG"
++    assert ch.card_text(ch.Slide("https://i/1.jpg", "Only title")) == "*Only title*"
++    long = ch.card_text(ch.Slide("https://i/1.jpg", "T" * 300, "D" * 300))
++    assert ch._width(long) <= ch.CARD_TEXT_MAX
++
++
++def test_cards_follow_metas_shape_and_buttons_carry_the_list_row_ids():
++    slides = [ch.Slide(IMG.format(i), f"P{i}", "d", "A very long button label here") for i in range(2)]
++    cards = ch.carousel_cards(slides, "abc123")
++    assert [c["card_index"] for c in cards] == [0, 1]
++    assert cards[1]["header"] == {"type": "image", "image": {"link": IMG.format(1)}}
++    button = cards[1]["action"]["buttons"][0]["quick_reply"]
++    assert button["id"] == "abc123.1"
++    assert ch.parse_row_id(button["id"]) == ch.Tap("abc123", "", 1)
++    assert ch._width(button["title"]) <= ch.BUTTON_MAX
++
++
++@pytest.mark.parametrize("count, ok", [(1, False), (2, True), (10, True), (11, False)])
++def test_a_carousel_needs_two_to_ten_cards(count, ok):
++    slides = [ch.Slide(IMG.format(i), f"P{i}") for i in range(count)]
++    assert ch.fits_carousel(slides, "Pick") is ok
++
++
++def test_a_carousel_needs_https_images_and_a_body_that_fits():
++    good = [ch.Slide(IMG.format(i), f"P{i}") for i in range(2)]
++    assert not ch.fits_carousel([ch.Slide("http://x/1.jpg", "P"), good[1]], "Pick")
++    assert not ch.fits_carousel(good, "x" * (ch.CAROUSEL_BODY_MAX + 1))
++
++
++async def test_interakt_tp_sends_the_carousel_as_an_interactive_message():
++    provider = InteraktTPWhatsAppProvider(isv_token="t", waba_id="w", phone_number_id="p", amped_url="https://amped.test")
++    bodies = recording(provider)
++    cards = ch.carousel_cards([ch.Slide(IMG.format(i), f"P{i}") for i in range(2)], "abc123")
++    await provider.send_carousel("+918218467229", "Choose a package", cards)
++    body = bodies[-1]
++    assert body["to"] == "918218467229" and body["type"] == "interactive"
++    assert body["interactive"] == {"type": "carousel", "body": {"text": "Choose a package"}, "action": {"cards": cards}}
++    assert provider.supports_carousel and not WhatsAppProviderBase.supports_carousel
++
++
++# -- what the agent asked for ------------------------------------------------
++
++def test_the_agent_layout_choice_is_read_and_survives_the_session_store():
++    data = {
++        "tool_id": "t1", "tool_name": "pick_package",
++        "details": {"component": "card", "status": "progress", "input": {"cards": raw_cards()}, "_meta": {"orientation": "horizontal"}},
++    }
++    parsed = _parse_elicitation_data("m1", data).pending_elicitation
++    assert parsed.orientation == "horizontal"
++    assert pending_from_dict(pending_to_dict(parsed)).orientation == "horizontal"
++    assert pending_from_dict({k: v for k, v in pending_to_dict(parsed).items() if k != "orientation"}).orientation == ""
++
++
++@pytest.mark.parametrize("name, p", [
++    ("vertical layout", pending(orientation="")),
++    ("a card without an image", pending(raw_cards(3, img="") )),
++])
++def test_cards_stay_a_list_unless_horizontal_with_images(name, p):
++    assert presenter.current_list(p).slides == ()
++
++
++def test_horizontal_cards_with_images_become_slides():
++    slides = presenter.current_list(pending()).slides
++    assert [(s.title, s.detail, s.button) for s in slides] == [(f"Package {i}", f"Detail {i}", "Book now") for i in range(3)]
++
++
++# -- the bridge --------------------------------------------------------------
++
++async def reply_with(bridge, client, seed, p):
++    await seed()
++    client.chat_responses.append(MedassistResponse(text="Choose a package", pending_elicitation=p))
++    await bridge.run(text("packages"))
++
++
++async def test_horizontal_cards_go_out_as_a_carousel_and_a_tap_picks_the_card(session_manager, client, seed):
++    provider = CarouselProvider()
++    bridge = bridge_for(provider, session_manager, client)
++    await reply_with(bridge, client, seed, pending())
++    assert [k for k, _ in provider.sent] == ["carousel"]
++    sent = provider.of("carousel")[0]
++    assert sent["body"] == "Choose a package"
++    button_id = sent["cards"][1]["action"]["buttons"][0]["quick_reply"]["id"]
++
++    client.callback_responses.append(MedassistResponse(text="Booked"))
++    await bridge.run(tap(button_id, "Book now"))
++    assert client.callback_params == [{"tool_result": {"pick": 1}}]
++
++
++@pytest.mark.parametrize("name, make_provider, p", [
++    ("provider cannot send one", lambda: FakeProvider(), pending()),
++    ("vertical layout", lambda: CarouselProvider(), pending(orientation="")),
++    ("only one card", lambda: CarouselProvider(), pending(raw_cards(1))),
++    ("more than ten cards", lambda: CarouselProvider(), pending(raw_cards(11))),
++    ("WhatsApp rejects it", lambda: CarouselProvider(error=refusal(400)), pending()),
++])
++async def test_otherwise_the_cards_go_out_as_the_list_they_were_before(name, make_provider, p, session_manager, client, seed):
++    provider = make_provider()
++    await reply_with(bridge_for(provider, session_manager, client), client, seed, p)
++    assert provider.of("carousel") == []
++    assert len(provider.of("list")) == 1
++
++
++async def test_a_server_error_is_not_swallowed(session_manager, client, seed):
++    provider = CarouselProvider(error=refusal(503))
++    with pytest.raises(httpx.HTTPStatusError):
++        await reply_with(bridge_for(provider, session_manager, client), client, seed, pending())
++    assert provider.of("list") == []
+-- 
+2.43.0
+
