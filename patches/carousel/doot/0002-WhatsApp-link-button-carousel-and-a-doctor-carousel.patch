@@ -1,0 +1,264 @@
+From 844dd4fc388b8eb58a8c9e46722705af94b838a8 Mon Sep 17 00:00:00 2001
+From: Abinash <abinash.haldorai@eka.care>
+Date: Fri, 30 Oct 2026 15:04:29 +0000
+Subject: [PATCH] WhatsApp: link-button carousel and a doctor carousel
+
+Link carousel: when every card's primary CTA is a link with no tool to run, the
+cards get a URL button each (Meta needs one button type on every card); otherwise
+quick-reply buttons as before.
+
+Doctor carousel: the doctor step of a doctor_card can go out as a carousel with
+profile pictures, behind DOCTOR_CAROUSEL_ENABLED (default off), only when every
+doctor has a picture. A tap selects the doctor exactly like a list tap. Dates
+and slots stay lists.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_017jupsGPaMwDF6ADjpb25ED
+---
+ app/bridge/choices.py                    | 30 +++++++-
+ app/bridge/medassist/elicitation.py      |  1 +
+ app/bridge/medassist/presenter.py        | 15 +++-
+ app/core/config.py                       |  3 +
+ app/services/clients/medassist_client.py |  1 +
+ tests/test_carousel.py                   | 88 ++++++++++++++++++++++++
+ 6 files changed, 136 insertions(+), 2 deletions(-)
+
+diff --git a/app/bridge/choices.py b/app/bridge/choices.py
+index e0ac2b3..7826a99 100644
+--- a/app/bridge/choices.py
++++ b/app/bridge/choices.py
+@@ -49,6 +49,7 @@ class Slide:
+     title: str
+     detail: str = ""
+     button: str = "Select"
++    url: str = ""  # set on every slide for a link carousel; the button then opens it
+ 
+ 
+ @dataclass(frozen=True)
+@@ -221,8 +222,35 @@ def card_text(slide: Slide) -> str:
+     return f"{head}\n{detail}" if detail else head
+ 
+ 
++def is_link_carousel(slides: list[Slide]) -> bool:
++    """Meta wants one button type on every card, so links only when every slide has one."""
++    return bool(slides) and all(s.url.startswith("https://") for s in slides)
++
++
++def _link_action(slide: Slide) -> dict:
++    return {
++        "name": "cta_url",
++        "parameters": {"display_text": clip(slide.button, BUTTON_MAX), "url": slide.url},
++    }
++
++
+ def carousel_cards(slides: list[Slide], token: str) -> list[dict]:
+-    """Slides as Meta carousel cards; each button's id is ``{token}.{n}``, like a list row."""
++    """Slides as Meta carousel cards.
++
++    A link carousel gets one URL button per card. Otherwise each card has a quick-reply
++    button whose id is ``{token}.{n}``, like a list row, so a tap resolves like a list tap.
++    """
++    if is_link_carousel(slides):
++        return [
++            {
++                "card_index": i,
++                "type": "cta_url",
++                "header": {"type": "image", "image": {"link": slide.image}},
++                "body": {"text": card_text(slide)},
++                "action": _link_action(slide),
++            }
++            for i, slide in enumerate(slides)
++        ]
+     return [
+         {
+             "card_index": i,
+diff --git a/app/bridge/medassist/elicitation.py b/app/bridge/medassist/elicitation.py
+index febf310..943683c 100644
+--- a/app/bridge/medassist/elicitation.py
++++ b/app/bridge/medassist/elicitation.py
+@@ -32,6 +32,7 @@ class DoctorOption:
+     hospital_name: str = ""
+     description: str = ""          # list subtext: "Cardiology · 21 yrs · MBBS, MD"
+     preferred_date: str = ""       # YYYY-MM-DD the card loaded slots for, if any
++    image: str = ""                # profile picture URL, for the doctor carousel
+     # [{"date": "YYYY-MM-DD", "slots": ["HH:MM", …] | None}] — None: not loaded yet,
+     # []: loaded and fully booked.
+     dates: list[dict] = field(default_factory=list)
+diff --git a/app/bridge/medassist/presenter.py b/app/bridge/medassist/presenter.py
+index 15c85b4..30d4b1c 100644
+--- a/app/bridge/medassist/presenter.py
++++ b/app/bridge/medassist/presenter.py
+@@ -15,6 +15,7 @@ from app.bridge.medassist.elicitation import (
+     format_date,
+     time_label,
+ )
++from app.core.config import get_settings
+ 
+ OPTION, DOCTOR, DATE, SLOT = "option", "doctor", "date", "slot"
+ 
+@@ -176,20 +177,32 @@ def _slides(p: PendingElicitation, raw: dict) -> tuple:
+     slides = []
+     for card in p.cards:
+         data = raw.get(card.card_id) or {}
++        cta = data.get("primary_cta") or {}
+         slides.append(
+             Slide(
+                 image=str(data.get("img") or ""),
+                 title=card.title,
+                 detail=str(data.get("description") or data.get("tags") or data.get("tags_text") or data.get("banner_text") or ""),
+-                button=str((data.get("primary_cta") or {}).get("title") or "Select"),
++                button=str(cta.get("title") or "Select"),
++                # A link-only CTA (no tool to run) opens the page; picking needs a quick reply.
++                url=str(cta.get("link") or "") if not cta.get("tool_result") else "",
+             )
+         )
+     return tuple(slides) if all(s.image for s in slides) else ()
+ 
+ 
++def _doctor_slides(p: PendingElicitation) -> tuple:
++    """The doctors as carousel slides, when the switch is on and every doctor has a picture."""
++    if not get_settings().DOCTOR_CAROUSEL_ENABLED:
++        return ()
++    slides = tuple(Slide(image=d.image, title=d.name, detail=d.description) for d in p.doctor_options)
++    return slides if all(s.image for s in slides) else ()
++
++
+ def _doctors_list(p: PendingElicitation) -> ChoiceList:
+     return ChoiceList(
+         step=DOCTOR,
++        slides=_doctor_slides(p),
+         choices=[from_label(d.name, d.description) for d in p.doctor_options],
+         items=p.doctor_options,
+         token=list_token(DOCTOR, p.message_id, p.tool_id, *(d.doctor_id for d in p.doctor_options)),
+diff --git a/app/core/config.py b/app/core/config.py
+index 19de9bf..6dc0ffe 100644
+--- a/app/core/config.py
++++ b/app/core/config.py
+@@ -41,6 +41,9 @@ class Settings(BaseSettings):
+     DEBUG: bool = False
+     LOG_LEVEL: str = "INFO"
+     THINKING_ACK_ENABLED: bool = True
++    # Show the doctor step of a doctor_card as a carousel with profile pictures (where the
++    # provider can and every doctor has one) instead of a list.
++    DOCTOR_CAROUSEL_ENABLED: bool = False
+ 
+     # config for direct meta whatsapp message provider.
+     WHATSAPP_API_URL: str = "https://graph.facebook.com/v18.0"
+diff --git a/app/services/clients/medassist_client.py b/app/services/clients/medassist_client.py
+index 0684f10..b244bcd 100644
+--- a/app/services/clients/medassist_client.py
++++ b/app/services/clients/medassist_client.py
+@@ -83,6 +83,7 @@ def _doctor_option(entry: dict, info: dict) -> DoctorOption:
+         hospital_name=hospital.get("name", ""),
+         description=" · ".join(str(d) for d in detail if d),
+         preferred_date=entry.get("preferred_date") or "",
++        image=info.get("profile_pic") or "",
+         dates=sorted(dates, key=lambda d: d["date"]),
+     )
+ 
+diff --git a/tests/test_carousel.py b/tests/test_carousel.py
+index 0a1f851..42b3e88 100644
+--- a/tests/test_carousel.py
++++ b/tests/test_carousel.py
+@@ -15,6 +15,7 @@ from app.services.clients.medassist_client import MedassistResponse, _parse_elic
+ from app.services.whatsapp.providers.base_provider import WhatsAppProviderBase
+ from app.services.whatsapp.providers.interakt_tp_provider import InteraktTPWhatsAppProvider
+ from tests.fakes import AGENT_ID, FakeProvider, tap, text
++from tests.test_bridge_phase2 import doctor_card
+ from tests.test_provider_flows import recording
+ 
+ IMG = "https://cdn.example/{}.jpg"
+@@ -175,3 +176,90 @@ async def test_a_server_error_is_not_swallowed(session_manager, client, seed):
+     with pytest.raises(httpx.HTTPStatusError):
+         await reply_with(bridge_for(provider, session_manager, client), client, seed, pending())
+     assert provider.of("list") == []
++
++
++# -- link carousel -----------------------------------------------------------
++
++def test_a_link_carousel_has_one_url_button_per_card():
++    slides = [ch.Slide(IMG.format(i), f"P{i}", "d", "Know more", url=f"https://clinic.example/p{i}") for i in range(2)]
++    assert ch.is_link_carousel(slides)
++    card = ch.carousel_cards(slides, "abc123")[1]
++    assert card["type"] == "cta_url" and card["header"]["image"]["link"] == IMG.format(1)
++    assert card["action"] == {"name": "cta_url", "parameters": {"display_text": "Know more", "url": "https://clinic.example/p1"}}
++
++
++def test_one_card_without_a_link_makes_every_card_a_quick_reply():
++    slides = [ch.Slide(IMG.format(0), "P0", url="https://clinic.example/p0"), ch.Slide(IMG.format(1), "P1")]
++    assert not ch.is_link_carousel(slides)
++    assert [c["action"]["buttons"][0]["quick_reply"]["id"] for c in ch.carousel_cards(slides, "abc123")] == ["abc123.0", "abc123.1"]
++    http = [ch.Slide(IMG.format(i), f"P{i}", url="http://clinic.example") for i in range(2)]
++    assert not ch.is_link_carousel(http)
++
++
++def test_cards_with_only_a_link_become_a_link_carousel_and_a_tool_cta_stays_a_pick():
++    links = [{**c, "primary_cta": {"cta_id": "l", "title": "Know more", "link": f"https://clinic.example/{c['card_id']}"}} for c in raw_cards()]
++    assert all(s.url for s in presenter.current_list(pending(links)).slides)
++    both = [{**c, "primary_cta": {**c["primary_cta"], "link": "https://clinic.example/x"}} for c in raw_cards()]
++    assert not any(s.url for s in presenter.current_list(pending(both)).slides)
++
++
++# -- doctors as a carousel ---------------------------------------------------
++
++def doctors(images=True, n=2):
++    ids = [f"d{i}" for i in range(n)]
++    details = {
++        d: {"name": f"Dr. {d}", "specialty": "Cardiology", "experience": f"{i + 9} yrs",
++            "hospitals": [{"hospital_id": f"h{i}", "name": "Moolchand"}],
++            **({"profile_pic": f"https://cdn.example/{d}.jpg"} if images else {})}
++        for i, d in enumerate(ids)
++    }
++    return doctor_card([{"doctor_id": d, "availability": []} for d in ids], details, "Cardiologists:")
++
++
++@pytest.fixture
++def doctor_carousel_on(monkeypatch):
++    from app.core.config import get_settings
++
++    monkeypatch.setenv("DOCTOR_CAROUSEL_ENABLED", "true")
++    get_settings.cache_clear()
++
++
++async def test_doctors_go_out_as_a_carousel_and_a_tap_selects_the_doctor(doctor_carousel_on, session_manager, client, seed):
++    provider = CarouselProvider()
++    bridge = bridge_for(provider, session_manager, client)
++    await seed()
++    client.chat_responses.append(doctors())
++    await bridge.run(text("cardiologist"))
++    sent = provider.of("carousel")[0]
++    assert provider.of("list") == []
++    assert sent["body"] == "Cardiologists:"
++    assert sent["cards"][1]["body"]["text"] == "*Dr. d1*\nCardiology · 10 yrs"
++    assert sent["cards"][1]["header"]["image"]["link"] == "https://cdn.example/d1.jpg"
++
++    await bridge.run(tap(sent["cards"][1]["action"]["buttons"][0]["quick_reply"]["id"], "Select", message_id="w2"))
++    assert client.chat_texts[-1] == "[DOCTOR SELECTED: Dr. d1, doctor_id=d1, hospital_id=h1]"
++
++
++async def test_doctors_stay_a_list_when_the_switch_is_off(session_manager, client, seed):
++    provider = CarouselProvider()
++    await seed()
++    client.chat_responses.append(doctors())
++    await bridge_for(provider, session_manager, client).run(text("cardiologist"))
++    assert provider.of("carousel") == [] and len(provider.of("list")) == 1
++
++
++async def test_doctors_stay_a_list_when_any_doctor_has_no_picture(doctor_carousel_on, session_manager, client, seed):
++    provider = CarouselProvider()
++    response = doctors()
++    response.pending_elicitation.doctor_options[1].image = ""
++    await seed()
++    client.chat_responses.append(response)
++    await bridge_for(provider, session_manager, client).run(text("cardiologist"))
++    assert provider.of("carousel") == [] and len(provider.of("list")) == 1
++
++
++def test_a_doctors_profile_picture_is_kept_and_survives_the_session_store():
++    option = doctors().pending_elicitation.doctor_options[0]
++    assert option.image == "https://cdn.example/d0.jpg"
++    stored = pending_from_dict(pending_to_dict(doctors().pending_elicitation))
++    assert stored.doctor_options[0].image == "https://cdn.example/d0.jpg"
+-- 
+2.43.0
+

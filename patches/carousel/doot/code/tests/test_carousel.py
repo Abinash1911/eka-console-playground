@@ -15,6 +15,7 @@ from app.services.clients.medassist_client import MedassistResponse, _parse_elic
 from app.services.whatsapp.providers.base_provider import WhatsAppProviderBase
 from app.services.whatsapp.providers.interakt_tp_provider import InteraktTPWhatsAppProvider
 from tests.fakes import AGENT_ID, FakeProvider, tap, text
+from tests.test_bridge_phase2 import doctor_card
 from tests.test_provider_flows import recording
 
 IMG = "https://cdn.example/{}.jpg"
@@ -175,3 +176,90 @@ async def test_a_server_error_is_not_swallowed(session_manager, client, seed):
     with pytest.raises(httpx.HTTPStatusError):
         await reply_with(bridge_for(provider, session_manager, client), client, seed, pending())
     assert provider.of("list") == []
+
+
+# -- link carousel -----------------------------------------------------------
+
+def test_a_link_carousel_has_one_url_button_per_card():
+    slides = [ch.Slide(IMG.format(i), f"P{i}", "d", "Know more", url=f"https://clinic.example/p{i}") for i in range(2)]
+    assert ch.is_link_carousel(slides)
+    card = ch.carousel_cards(slides, "abc123")[1]
+    assert card["type"] == "cta_url" and card["header"]["image"]["link"] == IMG.format(1)
+    assert card["action"] == {"name": "cta_url", "parameters": {"display_text": "Know more", "url": "https://clinic.example/p1"}}
+
+
+def test_one_card_without_a_link_makes_every_card_a_quick_reply():
+    slides = [ch.Slide(IMG.format(0), "P0", url="https://clinic.example/p0"), ch.Slide(IMG.format(1), "P1")]
+    assert not ch.is_link_carousel(slides)
+    assert [c["action"]["buttons"][0]["quick_reply"]["id"] for c in ch.carousel_cards(slides, "abc123")] == ["abc123.0", "abc123.1"]
+    http = [ch.Slide(IMG.format(i), f"P{i}", url="http://clinic.example") for i in range(2)]
+    assert not ch.is_link_carousel(http)
+
+
+def test_cards_with_only_a_link_become_a_link_carousel_and_a_tool_cta_stays_a_pick():
+    links = [{**c, "primary_cta": {"cta_id": "l", "title": "Know more", "link": f"https://clinic.example/{c['card_id']}"}} for c in raw_cards()]
+    assert all(s.url for s in presenter.current_list(pending(links)).slides)
+    both = [{**c, "primary_cta": {**c["primary_cta"], "link": "https://clinic.example/x"}} for c in raw_cards()]
+    assert not any(s.url for s in presenter.current_list(pending(both)).slides)
+
+
+# -- doctors as a carousel ---------------------------------------------------
+
+def doctors(images=True, n=2):
+    ids = [f"d{i}" for i in range(n)]
+    details = {
+        d: {"name": f"Dr. {d}", "specialty": "Cardiology", "experience": f"{i + 9} yrs",
+            "hospitals": [{"hospital_id": f"h{i}", "name": "Moolchand"}],
+            **({"profile_pic": f"https://cdn.example/{d}.jpg"} if images else {})}
+        for i, d in enumerate(ids)
+    }
+    return doctor_card([{"doctor_id": d, "availability": []} for d in ids], details, "Cardiologists:")
+
+
+@pytest.fixture
+def doctor_carousel_on(monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("DOCTOR_CAROUSEL_ENABLED", "true")
+    get_settings.cache_clear()
+
+
+async def test_doctors_go_out_as_a_carousel_and_a_tap_selects_the_doctor(doctor_carousel_on, session_manager, client, seed):
+    provider = CarouselProvider()
+    bridge = bridge_for(provider, session_manager, client)
+    await seed()
+    client.chat_responses.append(doctors())
+    await bridge.run(text("cardiologist"))
+    sent = provider.of("carousel")[0]
+    assert provider.of("list") == []
+    assert sent["body"] == "Cardiologists:"
+    assert sent["cards"][1]["body"]["text"] == "*Dr. d1*\nCardiology · 10 yrs"
+    assert sent["cards"][1]["header"]["image"]["link"] == "https://cdn.example/d1.jpg"
+
+    await bridge.run(tap(sent["cards"][1]["action"]["buttons"][0]["quick_reply"]["id"], "Select", message_id="w2"))
+    assert client.chat_texts[-1] == "[DOCTOR SELECTED: Dr. d1, doctor_id=d1, hospital_id=h1]"
+
+
+async def test_doctors_stay_a_list_when_the_switch_is_off(session_manager, client, seed):
+    provider = CarouselProvider()
+    await seed()
+    client.chat_responses.append(doctors())
+    await bridge_for(provider, session_manager, client).run(text("cardiologist"))
+    assert provider.of("carousel") == [] and len(provider.of("list")) == 1
+
+
+async def test_doctors_stay_a_list_when_any_doctor_has_no_picture(doctor_carousel_on, session_manager, client, seed):
+    provider = CarouselProvider()
+    response = doctors()
+    response.pending_elicitation.doctor_options[1].image = ""
+    await seed()
+    client.chat_responses.append(response)
+    await bridge_for(provider, session_manager, client).run(text("cardiologist"))
+    assert provider.of("carousel") == [] and len(provider.of("list")) == 1
+
+
+def test_a_doctors_profile_picture_is_kept_and_survives_the_session_store():
+    option = doctors().pending_elicitation.doctor_options[0]
+    assert option.image == "https://cdn.example/d0.jpg"
+    stored = pending_from_dict(pending_to_dict(doctors().pending_elicitation))
+    assert stored.doctor_options[0].image == "https://cdn.example/d0.jpg"

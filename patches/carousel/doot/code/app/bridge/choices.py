@@ -49,6 +49,7 @@ class Slide:
     title: str
     detail: str = ""
     button: str = "Select"
+    url: str = ""  # set on every slide for a link carousel; the button then opens it
 
 
 @dataclass(frozen=True)
@@ -221,8 +222,35 @@ def card_text(slide: Slide) -> str:
     return f"{head}\n{detail}" if detail else head
 
 
+def is_link_carousel(slides: list[Slide]) -> bool:
+    """Meta wants one button type on every card, so links only when every slide has one."""
+    return bool(slides) and all(s.url.startswith("https://") for s in slides)
+
+
+def _link_action(slide: Slide) -> dict:
+    return {
+        "name": "cta_url",
+        "parameters": {"display_text": clip(slide.button, BUTTON_MAX), "url": slide.url},
+    }
+
+
 def carousel_cards(slides: list[Slide], token: str) -> list[dict]:
-    """Slides as Meta carousel cards; each button's id is ``{token}.{n}``, like a list row."""
+    """Slides as Meta carousel cards.
+
+    A link carousel gets one URL button per card. Otherwise each card has a quick-reply
+    button whose id is ``{token}.{n}``, like a list row, so a tap resolves like a list tap.
+    """
+    if is_link_carousel(slides):
+        return [
+            {
+                "card_index": i,
+                "type": "cta_url",
+                "header": {"type": "image", "image": {"link": slide.image}},
+                "body": {"text": card_text(slide)},
+                "action": _link_action(slide),
+            }
+            for i, slide in enumerate(slides)
+        ]
     return [
         {
             "card_index": i,

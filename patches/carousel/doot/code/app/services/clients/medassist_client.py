@@ -83,6 +83,7 @@ def _doctor_option(entry: dict, info: dict) -> DoctorOption:
         hospital_name=hospital.get("name", ""),
         description=" · ".join(str(d) for d in detail if d),
         preferred_date=entry.get("preferred_date") or "",
+        image=info.get("profile_pic") or "",
         dates=sorted(dates, key=lambda d: d["date"]),
     )
 

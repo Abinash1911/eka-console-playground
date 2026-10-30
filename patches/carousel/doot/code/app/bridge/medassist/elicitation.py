@@ -32,6 +32,7 @@ class DoctorOption:
     hospital_name: str = ""
     description: str = ""          # list subtext: "Cardiology · 21 yrs · MBBS, MD"
     preferred_date: str = ""       # YYYY-MM-DD the card loaded slots for, if any
+    image: str = ""                # profile picture URL, for the doctor carousel
     # [{"date": "YYYY-MM-DD", "slots": ["HH:MM", …] | None}] — None: not loaded yet,
     # []: loaded and fully booked.
     dates: list[dict] = field(default_factory=list)

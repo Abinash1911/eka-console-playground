@@ -110,3 +110,6 @@ Earlier note said carousel and Flow answers were "not found". After reading more
 
 ## 2026-10-30: carousel patch built (doot)
 Cards the agent marks horizontal, with images, now go out as Meta's interactive media carousel on `interakt_tp` numbers; everything else and any 4xx falls back to the list. 121 doot tests pass (19 new), six breakages caught. Read Meta's carousel page via curl (WebFetch/search could not): format confirmed, so claim 23 is now verified for Meta; Interakt pass-through still unconfirmed. Not sent on a real number. Nothing pushed to the company repo.
+
+## 2026-10-30: carousel patch 0002 (link carousel, doctors)
+Link-button cards (all CTAs are https links, none run a tool) and the doctor step of a doctor_card as a picture carousel behind `DOCTOR_CAROUSEL_ENABLED` (off by default). 128 doot tests pass, breakages caught. Not sent on a real number; `profile_pic` presence in real doctor data unconfirmed. Nothing pushed to the company repo.

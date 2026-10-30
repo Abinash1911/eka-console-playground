@@ -15,6 +15,7 @@ from app.bridge.medassist.elicitation import (
     format_date,
     time_label,
 )
+from app.core.config import get_settings
 
 OPTION, DOCTOR, DATE, SLOT = "option", "doctor", "date", "slot"
 
@@ -176,20 +177,32 @@ def _slides(p: PendingElicitation, raw: dict) -> tuple:
     slides = []
     for card in p.cards:
         data = raw.get(card.card_id) or {}
+        cta = data.get("primary_cta") or {}
         slides.append(
             Slide(
                 image=str(data.get("img") or ""),
                 title=card.title,
                 detail=str(data.get("description") or data.get("tags") or data.get("tags_text") or data.get("banner_text") or ""),
-                button=str((data.get("primary_cta") or {}).get("title") or "Select"),
+                button=str(cta.get("title") or "Select"),
+                # A link-only CTA (no tool to run) opens the page; picking needs a quick reply.
+                url=str(cta.get("link") or "") if not cta.get("tool_result") else "",
             )
         )
     return tuple(slides) if all(s.image for s in slides) else ()
 
 
+def _doctor_slides(p: PendingElicitation) -> tuple:
+    """The doctors as carousel slides, when the switch is on and every doctor has a picture."""
+    if not get_settings().DOCTOR_CAROUSEL_ENABLED:
+        return ()
+    slides = tuple(Slide(image=d.image, title=d.name, detail=d.description) for d in p.doctor_options)
+    return slides if all(s.image for s in slides) else ()
+
+
 def _doctors_list(p: PendingElicitation) -> ChoiceList:
     return ChoiceList(
         step=DOCTOR,
+        slides=_doctor_slides(p),
         choices=[from_label(d.name, d.description) for d in p.doctor_options],
         items=p.doctor_options,
         token=list_token(DOCTOR, p.message_id, p.tool_id, *(d.doctor_id for d in p.doctor_options)),
