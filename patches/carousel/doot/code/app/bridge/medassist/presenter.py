@@ -195,7 +195,7 @@ def _doctor_slides(p: PendingElicitation) -> tuple:
     """The doctors as carousel slides, when the switch is on and every doctor has a picture."""
     if not get_settings().DOCTOR_CAROUSEL_ENABLED:
         return ()
-    slides = tuple(Slide(image=d.image, title=d.name, detail=d.description) for d in p.doctor_options)
+    slides = tuple(Slide(image=d.image, title=d.name, detail=d.description, button="Book appointment") for d in p.doctor_options)
     return slides if all(s.image for s in slides) else ()
 
 

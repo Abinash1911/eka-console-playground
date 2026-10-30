@@ -235,6 +235,7 @@ async def test_doctors_go_out_as_a_carousel_and_a_tap_selects_the_doctor(doctor_
     assert sent["body"] == "Cardiologists:"
     assert sent["cards"][1]["body"]["text"] == "*Dr. d1*\nCardiology · 10 yrs"
     assert sent["cards"][1]["header"]["image"]["link"] == "https://cdn.example/d1.jpg"
+    assert sent["cards"][1]["action"]["buttons"][0]["quick_reply"]["title"] == "Book appointment"
 
     await bridge.run(tap(sent["cards"][1]["action"]["buttons"][0]["quick_reply"]["id"], "Select", message_id="w2"))
     assert client.chat_texts[-1] == "[DOCTOR SELECTED: Dr. d1, doctor_id=d1, hospital_id=h1]"
