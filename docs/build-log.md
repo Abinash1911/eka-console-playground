@@ -113,3 +113,6 @@ Cards the agent marks horizontal, with images, now go out as Meta's interactive 
 
 ## 2026-10-30: carousel patch 0002 (link carousel, doctors)
 Link-button cards (all CTAs are https links, none run a tool) and the doctor step of a doctor_card as a picture carousel behind `DOCTOR_CAROUSEL_ENABLED` (off by default). 128 doot tests pass, breakages caught. Not sent on a real number; `profile_pic` presence in real doctor data unconfirmed. Nothing pushed to the company repo.
+
+## 2026-11-03: new project agents-scribe (context only)
+Stored the Diabetica 7-step journey (from the deck) and the per-step handoff and API gap map (from the diagram, API table read from developer.eka.care on 3 Nov 2026, not tested) under `projects/agents-scribe/`. Deck and diagram themselves are not committed (customer and internal material). No code, no repos read yet.

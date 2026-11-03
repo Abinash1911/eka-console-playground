@@ -19,3 +19,6 @@ Open work, newest decisions first. Move an item to `docs/build-log.md` when done
 
 ## WhatsApp richer messages
 - [ ] Decide which to build first (see `docs/whatsapp-richer-messages.md`): link button + location (small), Flows (forms), carousel, payments. Needs answer on claims 21 and 22.
+
+## WhatsApp agent + Eka Scribe (new project)
+- [ ] Context stored in `projects/agents-scribe/`. Next: discuss the open questions in `gap-map.md`; read the Scribe repos before any build.
