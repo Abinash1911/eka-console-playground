@@ -21,4 +21,4 @@ Open work, newest decisions first. Move an item to `docs/build-log.md` when done
 - [ ] Decide which to build first (see `docs/whatsapp-richer-messages.md`): link button + location (small), Flows (forms), carousel, payments. Needs answer on claims 21 and 22.
 
 ## WhatsApp agent + Eka Scribe (new project)
-- [ ] Context stored in `projects/agents-scribe/`. Next: discuss the open questions in `gap-map.md`; read the Scribe repos before any build.
+- [ ] **Discussion pending (paused 2026-11-04).** Context is in `projects/agents-scribe/`. Resume with: (1) the patient scenario (Meena) and the gaps mapped to it, steps 6 and 7 being the biggest; (2) the six open questions in `gap-map.md`, starting with where WhatsApp-collected readings and intake live in Scribe; (3) read the Scribe repos before any build. Extra use-case ideas not in the deck (missed dose, high-reading alert, refill, meal photo, family booking, yearly eye/foot checks, dose-change check-in) are chat-only so far.
