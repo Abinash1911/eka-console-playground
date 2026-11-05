@@ -1,0 +1,691 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Care Loop Prototype</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout concept: left rail for the clinic console, centre for EMR / Scribe / workflows, right for the patient's WhatsApp. One state, three surfaces. */
+:root{
+  --bg:#F5F6F8; --surface:#FFFFFF; --ink:#12161C; --ink-2:#3A4250; --muted:#667085; --faint:#98A2B3;
+  --line:#E3E6EB; --line-2:#EEF0F3;
+  --accent:#1D5FD8; --accent-ink:#0F3F9E; --accent-wash:#EDF3FE;
+  --good:#16784A; --good-wash:#E8F5EE; --warn:#9A6200; --warn-wash:#FFF4DC; --crit:#B42318; --crit-wash:#FDECEA;
+  --wa:#008069; --wa-out:#D9FDD3; --wa-bg:#EFEAE2; --ticks:#53BDEB;
+  --font:'Inter','Noto Sans Devanagari',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:auto}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px;line-height:1.5;font-optical-sizing:auto;-webkit-font-smoothing:antialiased;
+  padding-block:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.num{font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-columns:216px minmax(0,1fr) 372px;gap:28px;max-width:1500px;margin:0 auto;padding-block:20px;align-items:start}
+
+/* Rail */
+.rail{position:sticky;top:20px;display:flex;flex-direction:column;gap:20px;min-width:0}
+.brand{display:flex;align-items:center;gap:10px}
+.mark{width:32px;height:32px;border-radius:9px;background:var(--ink);display:grid;place-items:center;color:#fff}
+.brand b{display:block;font-size:15px;font-weight:650;letter-spacing:-.01em;line-height:1.2}
+.brand span{font-size:12px;color:var(--muted)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:8px 10px;border-radius:8px;color:var(--ink-2);font-weight:500;text-align:left;position:relative}
+.nav button:hover{background:#ECEEF2}
+.nav button[aria-current="page"]{background:var(--accent-wash);color:var(--accent-ink)}
+.badge{margin-left:auto;background:var(--crit);color:#fff;font-size:11px;font-weight:600;min-width:18px;height:18px;border-radius:9px;display:grid;place-items:center;padding:0 5px}
+.rail small{color:var(--muted);font-size:12px;line-height:1.5;display:block}
+.linkbtn{border:0;background:none;color:var(--accent);padding:0;font-weight:500;font-size:12px;text-align:left}
+.linkbtn:hover{text-decoration:underline}
+
+/* Main */
+main{min-width:0;position:relative}
+.head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+h1{margin:0;font-size:24px;font-weight:650;letter-spacing:-.022em;line-height:1.2;text-wrap:balance}
+.sub{margin:6px 0 0;color:var(--muted);max-width:62ch}
+h2{margin:0;font-size:14px;font-weight:600;letter-spacing:-.005em}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;min-width:0}
+.stack{display:flex;flex-direction:column;gap:16px}
+.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.grow{flex:1}
+
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:6px 12px;font-weight:500;font-size:13px;color:var(--ink);line-height:1.4}
+.btn:hover{background:#F8F9FB}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-ink)}
+.btn.lg{padding:10px 16px;font-size:14px;border-radius:10px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.why{color:var(--faint);font-size:12px;margin-top:2px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:500;background:#EEF0F3;color:var(--ink-2);white-space:nowrap}
+.chip.good{background:var(--good-wash);color:var(--good)}
+.chip.warn{background:var(--warn-wash);color:var(--warn)}
+.chip.crit{background:var(--crit-wash);color:var(--crit)}
+.chip.blue{background:var(--accent-wash);color:var(--accent-ink)}
+.chip.wa{background:#E3F4EF;color:var(--wa)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+.filters button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:500;color:var(--ink-2)}
+.filters button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:#fff}
+
+/* Workflows */
+.targets{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-end}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:500}
+.field .pair{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.field input{width:72px;border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:#fff;font-variant-numeric:tabular-nums}
+.field .unit{font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+.uc{display:flex;flex-direction:column;gap:10px}
+.uc .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.uc h3{margin:0;font-size:15px;font-weight:600;letter-spacing:-.01em;line-height:1.3}
+.uc p{margin:0;color:var(--ink-2);font-size:13px}
+.uc dl{margin:0;display:grid;grid-template-columns:78px 1fr;gap:4px 8px;font-size:12px;color:var(--muted)}
+.uc dt{font-weight:500}
+.uc dd{margin:0;color:var(--ink-2)}
+.uc .foot{margin-top:auto;padding-top:4px;display:flex;justify-content:space-between;align-items:center}
+.uc.off{background:#FAFAFB}
+.uc.off h3,.uc.off p{color:var(--faint)}
+.sw{width:36px;height:20px;border-radius:10px;border:0;background:#CDD2DA;position:relative;padding:0;transition:background .15s}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.25);transition:transform .15s}
+.sw[aria-checked="true"]{background:var(--good)}
+.sw[aria-checked="true"]::after{transform:translateX(16px)}
+
+/* Table */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:500;color:var(--muted);font-size:12px;padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:12px;border-bottom:1px solid var(--line-2);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tr.hl td{background:var(--accent-wash)}
+td b{font-weight:600}
+
+/* Record */
+.pt{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.av{width:48px;height:48px;border-radius:50%;background:#E5ECFB;color:var(--accent-ink);display:grid;place-items:center;font-weight:650;font-size:16px;flex:none}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:16px;align-items:start}
+.meta{display:flex;gap:6px 20px;flex-wrap:wrap;color:var(--muted);font-size:13px}
+.meta b{color:var(--ink-2);font-weight:500}
+.alert{border:1px solid #F1C7C2;background:var(--crit-wash);border-radius:12px;padding:14px 16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.alert.seen{background:var(--warn-wash);border-color:#F0DCA8}
+.alert.done{background:var(--good-wash);border-color:#BFE0CF}
+.alert strong{font-weight:600}
+.alert .why{color:var(--ink-2);font-size:13px}
+.alert .acts{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:8px 12px;font-size:13px}
+.kv dt{color:var(--muted);font-weight:500}
+.kv dd{margin:0}
+.empty{color:var(--muted);font-style:normal}
+.stat{display:flex;gap:24px;flex-wrap:wrap}
+.stat div b{display:block;font-size:20px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2}
+.stat div span{font-size:12px;color:var(--muted)}
+svg.chart{width:100%;height:auto;display:block}
+.chart .gl line{stroke:var(--line-2)}
+.chart text{font-size:14px;fill:var(--muted);font-family:var(--font)}
+.chart .band{fill:#E8F5EE}
+.chart .ln{fill:none;stroke:var(--accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.chart .pt{fill:#fff;stroke:var(--accent);stroke-width:2}
+.chart .pt.last{fill:var(--accent)}
+.chart .pt.hi{stroke:var(--crit)}
+.chart .pt.last.hi{fill:var(--crit)}
+.chart .lbl{font-weight:600;fill:var(--ink)}
+.chart .bandlbl{fill:var(--good);font-weight:500}
+.feed{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.feed li{display:grid;grid-template-columns:44px 1fr;gap:8px;padding:10px 0;border-bottom:1px solid var(--line-2);font-size:13px}
+.feed li:last-child{border-bottom:0}
+.feed time{color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums;padding-top:1px}
+.feed .src{display:block;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
+.feed li.new{animation:flash 1.6s ease-out}
+@keyframes flash{from{background:var(--accent-wash)}to{background:transparent}}
+.bul{margin:0;padding-left:18px;color:var(--ink-2)}
+.bul li{margin:2px 0}
+
+/* Journey */
+.jrow{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--line-2)}
+.jrow:last-child{border-bottom:0}
+.jn{width:22px;height:22px;border-radius:50%;background:#EEF0F3;color:var(--muted);display:grid;place-items:center;font-size:11px;font-weight:650;flex:none}
+.jrow.done .jn{background:var(--good-wash);color:var(--good)}
+.jrow.cur .jn{background:var(--accent);color:#fff}
+.jrow.upcoming .jt b,.jrow.upcoming .jt span{color:var(--faint)}
+.jt{flex:1;min-width:0}
+.jt b{display:block;font-size:13.5px;font-weight:600}
+.jt span{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.jstatus{flex:none}
+.jstagelbl{margin:14px 0 2px}
+.jrow:first-child,.jstagelbl:first-child+.jrow{}
+
+/* Ops / KPI */
+.kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(136px,1fr));gap:12px}
+.kpitile{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpitile b{display:block;font-size:22px;font-weight:650;letter-spacing:-.02em;line-height:1.2;font-variant-numeric:tabular-nums}
+.kpitile span{font-size:12px;color:var(--muted)}
+.kpitile.crit b{color:var(--crit)}
+.kpitile.good b{color:var(--good)}
+.bars{display:flex;align-items:flex-end;gap:10px;height:120px;padding-top:8px}
+.bars .b{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.bars .b i{width:100%;border-radius:4px 4px 0 0;background:var(--accent-wash)}
+.bars .b em{font-style:normal;font-size:11px;color:var(--muted);text-align:center;line-height:1.3}
+
+/* Scribe */
+.scribe{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:16px;align-items:start}
+.tr{display:flex;flex-direction:column;gap:10px;min-height:320px;max-height:520px;overflow:auto}
+.ln2{display:grid;grid-template-columns:34px 1fr;gap:8px;font-size:13px}
+.ln2 b{font-size:11px;font-weight:600;letter-spacing:.05em;color:var(--muted);padding-top:2px}
+.rec{display:inline-flex;align-items:center;gap:8px;font-weight:500;color:var(--crit)}
+.rec i{width:8px;height:8px;border-radius:50%;background:var(--crit);animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.sec{display:flex;flex-direction:column;gap:4px;padding:10px 0;border-bottom:1px solid var(--line-2)}
+.sec:last-of-type{border-bottom:0}
+.ed{outline:0;border-radius:6px;padding:4px 6px;margin:0 -6px;color:var(--ink-2)}
+.ed:hover{background:#F5F6F8}
+.ed:focus{background:var(--accent-wash)}
+.rx td,.rx th{padding:8px 8px}
+.ph-empty{color:var(--muted);padding:24px 0;text-align:center}
+
+/* Phone */
+.phonecol{position:sticky;top:20px;display:flex;flex-direction:column;gap:10px;align-items:center;min-width:0}
+.pcap{display:flex;justify-content:space-between;align-items:center;width:100%;max-width:340px}
+.phone{width:100%;max-width:340px;height:660px;border-radius:40px;background:#161A20;padding:9px;box-shadow:0 18px 40px -18px rgba(16,24,40,.35),0 2px 6px rgba(16,24,40,.12)}
+.screen{height:100%;border-radius:32px;overflow:hidden;background:var(--wa-bg);display:flex;flex-direction:column}
+.status{background:var(--wa);color:#fff;display:flex;justify-content:space-between;padding:10px 22px 4px;font-size:12px;font-weight:600}
+.wh{background:var(--wa);color:#fff;display:flex;align-items:center;gap:10px;padding:6px 14px 10px}
+.wh .logo{width:36px;height:36px;border-radius:50%;background:#fff;color:var(--wa);display:grid;place-items:center;font-weight:700;font-size:14px;flex:none}
+.wh b{display:flex;gap:4px;align-items:center;font-weight:600;font-size:15px;line-height:1.2}
+.wh span{font-size:12px;opacity:.85}
+.wh .pills{margin-left:auto;display:flex;gap:5px;flex:none}
+.wh .pill{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.18);color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;border-radius:999px;padding:3px 7px}
+.wh .pill i{width:5px;height:5px;border-radius:50%;background:#6CF2A4;display:inline-block}
+.wh .pill.emr{background:#fff;color:#5B3FC9}
+.flowbar{background:#00695A;padding:6px 14px 9px;flex:none}
+.flowbar .lbl{color:#fff;font-size:10.5px;font-weight:600;margin-bottom:5px;opacity:.9}
+.flowseg{display:flex;gap:3px}
+.flowseg i{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.3);display:block;font-style:normal}
+.flowseg i.on{background:#fff}
+.chat{flex:1;overflow-y:auto;padding:12px 10px;display:flex;flex-direction:column;gap:6px;scroll-behavior:smooth}
+.hint{align-self:center;background:#FFF6D6;color:#5E4B00;font-size:12px;border-radius:8px;padding:8px 12px;text-align:center;max-width:90%}
+.day{align-self:center;background:#E1F0F7;color:#4B5B66;font-size:11px;border-radius:6px;padding:2px 8px;margin-bottom:2px}
+.msg{max-width:84%;padding:6px 9px 4px;border-radius:9px;font-size:13.5px;line-height:1.4;box-shadow:0 1px 1px rgba(16,24,40,.12);word-wrap:break-word;overflow-wrap:anywhere;animation:pop .18s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(4px)}}
+.msg.in{align-self:flex-start;background:#fff;border-top-left-radius:2px}
+.msg.out{align-self:flex-end;background:var(--wa-out);border-top-right-radius:2px}
+.msg .t{display:block;text-align:right;font-size:10.5px;color:#8A949C;margin-top:1px}
+.msg.sys{align-self:center;background:none;box-shadow:none;color:#6B7680;font-size:12px;text-align:center;max-width:90%;padding:4px 10px}
+.msg.out .t::after{content:" \2713\2713";color:var(--ticks);letter-spacing:-2px}
+.msg .who{display:block;font-size:12px;font-weight:600;color:var(--accent-ink);margin-bottom:1px}
+.msg .tpl{display:block;font-size:10.5px;color:#8A949C;margin-bottom:2px}
+.msg ul{margin:4px 0 2px;padding-left:16px}
+.msg ul li{margin:1px 0}
+.tile{margin:-1px -2px 4px;border-radius:7px;background:repeating-linear-gradient(45deg,#E9E4DA,#E9E4DA 8px,#F1EDE4 8px,#F1EDE4 16px);height:96px;display:grid;place-items:end start;padding:6px 8px;font-size:12px;color:#5C5648}
+.doc{display:flex;gap:8px;align-items:center;background:#F2F4F6;border-radius:7px;padding:8px;margin:2px 0 4px;font-size:12.5px}
+.doc i{width:28px;height:34px;border-radius:4px;background:var(--crit);color:#fff;font-style:normal;font-size:9px;font-weight:700;display:grid;place-items:center}
+.msg.typing{display:flex;gap:4px;padding:10px 12px}
+.msg.typing i{width:6px;height:6px;border-radius:50%;background:#9AA3AB;animation:blink 1s infinite}
+.msg.typing i:nth-child(2){animation-delay:.15s}.msg.typing i:nth-child(3){animation-delay:.3s}
+@keyframes blink{40%{opacity:.25}}
+.quick{display:flex;flex-direction:column;gap:4px;align-self:flex-start;width:84%}
+.quick button{background:#fff;color:#0A7CFF;border:0;border-radius:9px;padding:8px 10px;font-weight:500;font-size:13.5px;box-shadow:0 1px 1px rgba(16,24,40,.12)}
+.quick button:hover{background:#F0F7FF}
+.safety{align-self:stretch;background:#fff;border-radius:10px;padding:11px;box-shadow:0 1px 1px rgba(16,24,40,.12);animation:pop .18s ease-out}
+.safety .stitle{font-weight:600;font-size:13px;color:#1F2430;margin-bottom:8px}
+.sgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#FDEBEA;border-radius:8px;padding:8px;margin-bottom:9px}
+.sgrid .si{font-size:11.5px;color:#6B3330;line-height:1.3;display:flex;align-items:center;gap:5px}
+.sgrid .si i{width:6px;height:6px;border-radius:50%;background:#C0392B;flex:none;display:inline-block}
+.sbtns{display:flex;flex-direction:column;gap:6px}
+.sbtns button{border-radius:8px;padding:9px;font-weight:600;font-size:12.5px;border:1.5px solid}
+.sbtns .syes{background:#C0392B;border-color:#C0392B;color:#fff}
+.sbtns .sno{background:#fff;border-color:#008069;color:#008069}
+.ssub{font-size:10px;color:#8A949C;text-align:center;margin-top:3px}
+.billcard{align-self:stretch;background:#fff;border-radius:10px;padding:11px;box-shadow:0 1px 1px rgba(16,24,40,.12);animation:pop .18s ease-out}
+.billcard .btitle{font-size:11px;color:#667085;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.billcard .bprice{font-size:22px;font-weight:700;color:#1F2430;margin:3px 0 7px}
+.blist{margin:0 0 10px;padding-left:16px;font-size:12px;color:#3A4250}
+.blist li{margin:2px 0}
+.bpay{width:100%;background:#008069;color:#fff;border:0;border-radius:8px;padding:9px;font-weight:600;font-size:13px}
+.inp{display:flex;gap:6px;padding:8px;background:#F0F2F5}
+.inp input{flex:1;min-width:0;border:0;border-radius:20px;padding:8px 14px;background:#fff;font-size:13.5px}
+.inp button{width:36px;height:36px;border-radius:50%;border:0;background:var(--wa);color:#fff;display:grid;place-items:center;flex:none}
+.toast{position:fixed;left:50%;bottom:20px;transform:translate(-50%,20px);background:var(--ink);color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:all .25s;max-width:min(92vw,520px);z-index:50}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast b{font-weight:600;color:#9CC0FF;margin-right:6px}
+.foot-note{color:var(--muted);font-size:12px;margin-top:20px}
+
+@media (max-width:1240px){
+  .app{grid-template-columns:200px minmax(0,1fr);}
+  .phonecol{position:static;grid-column:1 / -1;order:3}
+}
+@media (max-width:900px){
+  .app{grid-template-columns:minmax(0,1fr);gap:16px}
+  .rail{position:static;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+  .nav{flex-direction:row;overflow-x:auto;max-width:100%}
+  .nav button{white-space:nowrap}
+  .rail small,.rail .linkbtn{display:none}
+  .cols,.scribe{grid-template-columns:minmax(0,1fr)}
+  .alert .acts{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><div class="mark"><svg class="ic" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4.5h-4.5"/></svg></div><div><b>Care Loop</b><span>Mehta Diabetes Clinic</span></div></div>
+    <nav class="nav" id="nav" aria-label="Clinic console"></nav>
+    <div>
+      <small>Prototype with sample data. Nothing is sent or saved. Clinical text is illustrative, not advice.</small>
+      <button class="linkbtn" id="reset" style="margin-top:8px">Reset demo</button>
+    </div>
+  </aside>
+  <main id="main" tabindex="-1"></main>
+  <section class="phonecol" id="phonecol" aria-label="Patient's WhatsApp">
+    <div class="pcap"><span class="eyebrow">Meena's WhatsApp</span><button class="linkbtn" id="clearchat">Clear chat</button></div>
+    <div class="phone"><div class="screen">
+      <div class="status"><span>9:41</span><span>5G &nbsp;100%</span></div>
+      <div class="wh"><div class="logo">M</div><div><b>Mehta Diabetes Clinic <svg class="ic" style="width:14px;height:14px;fill:#fff;stroke:var(--wa)" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m8 12.5 3 3 5-6"/></svg></b><span>Clinic assistant, AI</span></div><div class="pills"><span class="pill"><i></i>LIVE</span><span class="pill emr">EMR</span></div></div>
+      <div class="flowbar" id="flowbar" hidden><div class="lbl num" id="flowlbl"></div><div class="flowseg" id="flowseg"></div></div>
+      <div class="chat" id="chat" aria-live="polite"></div>
+      <form class="inp" id="form"><input id="msg" type="text" placeholder="Type a message" autocomplete="off" aria-label="Type a message as the patient"><button aria-label="Send"><svg class="ic" viewBox="0 0 24 24" style="width:16px;height:16px"><path d="M4 12 20 4l-4.5 16-3.5-6.5L4 12Z" fill="#fff"/></svg></button></form>
+    </div></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+const $=(s,r=document)=>r.querySelector(s);
+const ICON={
+ grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+ cal:'<rect x="3" y="4.5" width="18" height="16.5" rx="2.5"/><path d="M3 9.5h18M8 3v3M16 3v3"/>',
+ user:'<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.8-3.6 3.9-5.5 7.5-5.5s6.7 1.9 7.5 5.5"/>',
+ mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/>',
+ play:'<path d="M8 5.5v13l10.5-6.5L8 5.5Z"/>',
+ bars:'<path d="M4 20V10M12 20V4M20 20v-7"/>',
+ route:'<circle cx="5" cy="7" r="2"/><circle cx="19" cy="17" r="2"/><path d="M5 9v2a4 4 0 0 0 4 4h6a4 4 0 0 1 4 4"/>'
+};
+const ic=n=>'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'+ICON[n]+'</svg>';
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* ---------- Workflow library ---------- */
+const STAGES=['Before visit','In clinic','After visit','Between visits','Clinic operations'];
+const UC=[
+ {id:'book',s:0,t:'Book on WhatsApp',d:'Patient asks for a slot, picks one, and is booked. Reminder goes out the day before.',w:'Patient sends a message',e:'Appointment in the OPD queue',on:1},
+ {id:'family',s:0,t:'Book for family',d:'One number, many patients. Adds a parent or child as a linked record and books them.',w:'Patient says "for my mother"',e:'New linked patient record',on:1},
+ {id:'intake',s:0,t:'Pre-visit intake',d:'Four quick questions on symptoms, medicines and diet, so the doctor opens one summary.',w:'On the morning of the visit',e:'Summary on the patient record',on:1},
+ {id:'reports',s:0,t:'Share lab reports',d:'Patient sends a photo or PDF. The agent reads the values and asks them to confirm.',w:'Patient sends a file',e:'Lab values in the record',on:1},
+ {id:'queue',s:1,t:'Arrival and live queue',d:'Patient checks in on WhatsApp and gets a place in line. Late arrivals are told to the desk.',w:'Patient reaches the clinic',e:'Status: checked in',on:1},
+ {id:'scribe',s:1,t:'Scribe in the consult',d:'Scribe listens, drafts the note and prescription. The doctor edits and confirms.',w:'Doctor starts the consult',e:'Note and prescription',on:1},
+ {id:'plan',s:2,t:'Plan on WhatsApp',d:'Prescription, diet and advice sent to the patient, explained in their language.',w:'Doctor confirms the plan',e:'Delivered and read status',on:1},
+ {id:'meds',s:2,t:'Medicine reminders and refills',d:'Reminders by prescription timing. Skips are asked about, refills go to the pharmacy.',w:'Each dose time',e:'Adherence, refill requests',on:1},
+ {id:'lab',s:2,t:'Repeat test booking',d:'Books home collection or clinic lab when a test is due. Result comes back to the doctor.',w:'Test due date',e:'Lab order and result',on:0},
+ {id:'followup',s:2,t:'Follow-up and no-show recovery',d:'Nudges patients who did not book, and re-books those who missed.',w:'Follow-up date passes',e:'Follow-up booked or deferred',on:1},
+ {id:'referral',s:2,t:'Specialist referral',d:'Doctor refers to an eye or foot specialist. The agent books it and brings the report back.',w:'Doctor adds a referral',e:'Referral and report',on:0},
+ {id:'log',s:3,t:'Log a reading',d:'Patient sends a sugar, BP or weight reading. In-range is logged, high is asked about.',w:'Patient sends a number',e:'Chart point, flag if off target',on:1},
+ {id:'alert',s:3,t:'High-reading alert to doctor',d:'Readings above the alert limit are checked for danger signs and raised to the doctor.',w:'Reading above your limit',e:'Alert with reply options',on:1},
+ {id:'symptom',s:3,t:'Symptom check and escalation',d:'Patient reports feeling unwell. The agent asks safe questions and escalates fast.',w:'Patient reports symptoms',e:'Alert and call-back task',on:1},
+ {id:'meal',s:3,t:'Meal photo feedback',d:'Estimates carbs from a meal photo against the diet plan and suggests a swap.',w:'Patient sends a photo',e:'Meal log, marked as estimate',on:0},
+ {id:'ask',s:3,t:'Ask about my report',d:'Plain-language answers on the patient\'s own reports. Anything about treatment is flagged to the doctor.',w:'Patient asks a question',e:'Flagged question',on:1},
+ {id:'yearly',s:3,t:'Yearly eye, foot and kidney checks',d:'Tracks annual screenings and books them before they lapse.',w:'Check due in 30 days',e:'Screening status',on:0},
+ {id:'pay',s:4,t:'Payment link and receipt',d:'Sends the bill, takes UPI, returns a receipt in chat.',w:'Consult marked done',e:'Payment and receipt',on:1},
+ {id:'feedback',s:4,t:'Visit feedback',d:'Asks how the visit went. Happy patients are invited to review, unhappy ones reach staff.',w:'Two hours after the visit',e:'Score, staff task if low',on:0},
+ {id:'winback',s:4,t:'Win back overdue patients',d:'Finds patients not seen in 90 days and invites them back.',w:'Weekly',e:'Re-booked patients',on:0}
+];
+
+/* ---------- State ---------- */
+let S;
+function fresh(){
+  const base=[142,150,138,156,149,161,147,139,152,158,144,151,146,153];
+  return {
+    view:'journey', filter:-1, clock:9*60+41, jstep:0,
+    on:Object.fromEntries(UC.map(u=>[u.id,!!u.on])),
+    targets:{lo:80,hi:130,alert:250},
+    readings:base.map((v,i)=>({d:'Oct '+(21+i>31?21+i-31:21+i),v})).map((r,i)=>i>=11?{d:'Nov '+(i-10),v:r.v}:r),
+    labs:[{d:'Jan 2026',v:8.4},{d:'Jun 2026',v:7.9}],
+    adherence:5, summary:{intake:null,report:false},
+    today:[
+      {t:'9:30',n:'Ravi Kulkarni',why:'Diabetes review',src:'Desk',st:'In consult',wait:'06:48',flag:''},
+      {t:'9:45',n:'Sunita Joshi',why:'Thyroid and sugar, dizzy today',src:'WhatsApp',st:'Checked in',wait:'09:10',flag:'warn'},
+      {t:'10:15',n:'Meena Rao',why:'Follow-up',src:'WhatsApp',st:'Booked',me:1,wait:'—',flag:''},
+      {t:'10:30',n:'Imran Sheikh',why:'New patient',src:'Phone',st:'Booked',wait:'—',flag:''},
+      {t:'11:00',n:'Lata Pawar',why:'HbA1c review',src:'WhatsApp',st:'Booked',wait:'—',flag:''}],
+    upcoming:[],alerts:[],
+    events:[{t:'9:12',src:'System',text:'Reminder sent for today\'s visit'},{t:'8:30',src:'WhatsApp',text:'Fasting 153 mg/dL logged, above target'}],
+    scribe:{lines:0,state:'idle',sent:false}
+  };
+}
+S=fresh();
+const STATUS_CHIP={'Booked':'','Checked in':'blue','In consult':'warn','Done':'good'};
+function tm(){const m=S.clock;return Math.floor(m/60)+':'+String(m%60).padStart(2,'0')}
+function tick(){S.clock+=1}
+
+/* ---------- Toast, events ---------- */
+let toastT;
+function toast(msg){const t=$('#toast');t.innerHTML='<b>EMR updated</b>'+esc(msg);t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2800)}
+function addEvent(src,text){S.events.unshift({t:tm(),src,text,fresh:1});toast(text);if(S.view==='record')paint()}
+function openAlerts(){return S.alerts.filter(a=>a.state==='open').length}
+
+/* ---------- Nav ---------- */
+const VIEWS=[['journey','Meena\'s journey','route'],['workflows','Workflows','grid'],['today','Today\'s queue','cal'],['record','Patient record','user'],['scribe','Scribe consult','mic'],['ops','Clinic operations','bars']];
+const JOURNEY=UC.map(u=>u.id);
+const FLAG_RANK={crit:0,warn:1,'':2};
+const FLAG_LABEL={crit:'Red flag',warn:'Medium'};
+function drawNav(){
+  $('#nav').innerHTML=VIEWS.map(([id,l,i])=>'<button data-v="'+id+'"'+(S.view===id?' aria-current="page"':'')+'>'+ic(i)+l+(id==='record'&&openAlerts()?'<span class="badge">'+openAlerts()+'</span>':'')+'</button>').join('');
+}
+function go(v){S.view=v;if(location.hash!=='#'+v)try{history.replaceState(null,'','#'+v)}catch(e){}paint();window.scrollTo({top:0})}
+function paint(){drawNav();const m=$('#main');m.innerHTML=({journey:vJourney,workflows:vWork,today:vToday,record:vRecord,scribe:vScribe,ops:vOps})[S.view]();if(S.view==='scribe')scribeAfterPaint()}
+
+/* ---------- Journey ---------- */
+function vJourney(){
+  const total=JOURNEY.length,doneN=S.jstep,done=doneN>=total;
+  const rows=STAGES.map((stage,si)=>{
+    const items=JOURNEY.map((id,gi)=>({id,gi})).filter(x=>UC.find(u=>u.id===x.id).s===si);
+    if(!items.length)return '';
+    return '<div class="eyebrow jstagelbl">'+stage+'</div>'+items.map(x=>{
+      const u=UC.find(u=>u.id===x.id);
+      const state=x.gi<doneN?'done':x.gi===doneN?'cur':'upcoming';
+      const mark=state==='done'?'<svg class="ic" style="width:15px;height:15px;stroke:var(--good)" viewBox="0 0 24 24"><path d="m5 13 4 4L19 7"/></svg>':state==='cur'?'<span class="chip blue">Up next</span>':'';
+      return '<div class="jrow '+state+'"><span class="jn num">'+(x.gi+1)+'</span><div class="jt"><b>'+u.t+'</b><span>'+u.d+'</span></div><span class="jstatus">'+mark+'</span></div>';
+    }).join('');
+  }).join('');
+  return '<div class="head"><div><h1>Meena\'s journey</h1><p class="sub">One patient, every workflow, start to finish — book, consult, plan, and the care in between. Each step plays on her WhatsApp; open Patient record or Scribe any time to see where it lands.</p></div><span class="chip '+(done?'good':'')+' num">'+Math.min(doneN,total)+' of '+total+' played</span></div>'
+  +'<div class="stack"><div class="card">'+rows+'</div>'
+  +(done
+    ? '<div class="card"><h2 style="margin-bottom:4px">Journey complete</h2><p class="sub" style="margin:0 0 10px">Meena has been through every workflow this clinic has switched on.</p><button class="btn" id="jreset">Play it again</button></div>'
+    : '<div class="row" style="justify-content:flex-end"><button class="btn primary lg" id="jnext">'+ic('play').replace('class="ic"','class="ic" style="width:14px;height:14px;fill:#fff"')+'Play next: '+UC.find(u=>u.id===JOURNEY[doneN]).t+'</button></div>')
+  +'</div>';
+}
+let jRunning=false;
+async function playJourneyNext(){
+  if(jRunning||S.jstep>=JOURNEY.length)return;
+  jRunning=true;
+  const idx=S.jstep,id=JOURNEY[idx],my=++runId;
+  if(idx===0){chat().innerHTML='';addDay()}
+  if(window.innerWidth<=1240)$('#phonecol').scrollIntoView({behavior:'smooth',block:'center'});
+  if(id==='scribe'){
+    await sleep(300);if(my===runId){addMsg('sys','Dr. Mehta starts the consult. Scribe listens and drafts the note and prescription from the conversation, intake and glucose trend.');addEvent('Scribe','Consult note and prescription drafted — open the Scribe tab to see it')}
+  }else{
+    const ctx={last:'',hist:[],step:0,total:0};
+    await exec(SC[id],my,ctx);
+  }
+  if(my===runId){S.jstep=idx+1;if(S.view==='journey')paint()}
+  jRunning=false;
+}
+
+/* ---------- Views ---------- */
+function vWork(){
+  const n=Object.values(S.on).filter(Boolean).length;
+  const list=UC.filter(u=>S.filter<0||u.s===S.filter);
+  return '<div class="head"><div><h1>Workflows</h1><p class="sub">Switch on what your clinic needs. Each workflow runs on WhatsApp, reads from the patient record and writes back to it. Press Play to run one on the phone.</p></div><span class="chip good num">'+n+' of '+UC.length+' on</span></div>'
+  +'<div class="stack">'
+  +'<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:12px"><h2>Your rules for diabetes care</h2><span class="eyebrow">Used by alerts and readings</span></div><div class="targets">'
+  +'<div class="field"><label for="tlo">Fasting target</label><div class="pair"><input id="tlo" data-t="lo" type="number" value="'+S.targets.lo+'" min="40" max="200"> to <input id="thi" data-t="hi" type="number" value="'+S.targets.hi+'" min="80" max="250"><span class="unit">mg/dL</span></div></div>'
+  +'<div class="field"><label for="tal">Alert me above</label><div class="pair"><input id="tal" data-t="alert" type="number" value="'+S.targets.alert+'" min="150" max="500"><span class="unit">mg/dL</span></div></div>'
+  +'<div class="field"><label>Agent may</label><div style="color:var(--ink-2);padding-top:6px">Explain, remind, book, flag. Never change treatment.</div></div></div></div>'
+  +'<div class="filters" role="group" aria-label="Filter by stage"><button data-f="-1" aria-pressed="'+(S.filter<0)+'">All</button>'+STAGES.map((s,i)=>'<button data-f="'+i+'" aria-pressed="'+(S.filter===i)+'">'+s+'</button>').join('')+'</div>'
+  +'<div class="grid">'+list.map(u=>'<article class="card uc'+(S.on[u.id]?'':' off')+'"><div class="top"><span class="eyebrow">'+STAGES[u.s]+'</span><button class="sw" role="switch" aria-checked="'+S.on[u.id]+'" aria-label="'+esc(u.t)+'" data-tg="'+u.id+'"></button></div>'
+   +'<h3>'+u.t+'</h3><p>'+u.d+'</p><dl><dt>Starts when</dt><dd>'+u.w+'</dd><dt>Lands in EMR</dt><dd>'+u.e+'</dd></dl>'
+   +'<div class="foot"><span class="chip '+(S.on[u.id]?'good':'')+'">'+(S.on[u.id]?'On':'Off')+'</span><div>'+'<button class="btn primary" data-play="'+u.id+'"'+(S.on[u.id]?'':' disabled')+'>'+ic('play').replace('class="ic"','class="ic" style="width:14px;height:14px;fill:#fff"')+'Play</button>'+(S.on[u.id]?'':'<div class="why">Switch on to play it</div>')+'</div></div></article>').join('')+'</div></div>';
+}
+function vToday(){
+  const list=S.today.map(r=>{
+    if(r.me&&openAlerts())return Object.assign({},r,{flag:'crit'});
+    return r;
+  }).sort((a,b)=>FLAG_RANK[a.flag]-FLAG_RANK[b.flag]);
+  const rows=list.map(r=>'<tr'+(r.flag?' class="hl"':'')+'><td class="num">'+r.t+'</td><td><b>'+r.n+'</b><div style="color:var(--muted);font-size:12px">'+r.why+'</div></td><td>'+(r.flag?'<span class="chip '+r.flag+'">'+FLAG_LABEL[r.flag]+'</span>':'')+'</td><td class="num">'+r.wait+'</td><td><span class="chip '+(r.src==='WhatsApp'?'wa':'')+'">'+r.src+'</span></td><td><span class="chip '+STATUS_CHIP[r.st]+'">'+r.st+'</span></td><td style="text-align:right">'+(r.me?'<button class="btn" data-go="record">Open record</button>':'')+'</td></tr>').join('');
+  const up=S.upcoming.length?'<div class="card"><h2 style="margin-bottom:8px">Upcoming</h2><div class="tw"><table><tbody>'+S.upcoming.map(u=>'<tr class="hl"><td><b>'+u.n+'</b></td><td>'+u.w+'</td><td><span class="chip '+(u.src==='WhatsApp'?'wa':'blue')+'">'+u.src+'</span></td></tr>').join('')+'</tbody></table></div></div>':'';
+  return '<div class="head"><div><h1>Today\'s queue</h1><p class="sub">Wednesday 4 Nov. Bookings, check-ins and status changes from WhatsApp land here without desk entry. Red flags are sorted first.</p></div><span class="chip num">'+S.today.length+' patients</span></div><div class="stack"><div class="card"><div class="tw"><table><thead><tr><th>Time</th><th>Patient</th><th>Flag</th><th>Waiting</th><th>Booked via</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'+up+'</div>';
+}
+function chart(){
+  const R=S.readings,T=S.targets,W=640,H=230,pl=40,pr=16,pt=16,pb=28;
+  const maxV=Math.max(200,...R.map(r=>r.v))+20,minV=60;
+  const x=i=>pl+i*(W-pl-pr)/(R.length-1),y=v=>pt+(maxV-v)*(H-pt-pb)/(maxV-minV);
+  let g='';for(let t=Math.ceil(minV/50)*50;t<=maxV;t+=50)g+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(t)+'" y2="'+y(t)+'"/><text x="'+(pl-8)+'" y="'+(y(t)+4)+'" text-anchor="end">'+t+'</text>';
+  const path=R.map((r,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(r.v).toFixed(1)).join(' ');
+  const pts=R.map((r,i)=>'<circle class="pt'+(i===R.length-1?' last':'')+(r.v>T.alert?' hi':'')+'" cx="'+x(i).toFixed(1)+'" cy="'+y(r.v).toFixed(1)+'" r="'+(i===R.length-1?5:3.5)+'"/>').join('');
+  const L=R[R.length-1],lx=x(R.length-1);
+  const xl=[0,Math.floor((R.length-1)/2),R.length-1].map((i,k)=>'<text x="'+x(i)+'" y="'+(H-8)+'" text-anchor="'+(k===0?'start':k===2?'end':'middle')+'">'+R[i].d+'</text>').join('');
+  return '<svg class="chart" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Fasting glucose readings with target band"><g class="gl">'+g+'</g><rect class="band" x="'+pl+'" width="'+(W-pl-pr)+'" y="'+y(T.hi)+'" height="'+(y(T.lo)-y(T.hi))+'"/><text class="bandlbl" x="'+(pl+6)+'" y="'+(y(T.hi)+13)+'">Target '+T.lo+' to '+T.hi+'</text><path class="ln" d="'+path+'"/>'+pts+'<text class="lbl" x="'+(lx-8)+'" y="'+(y(L.v)-10)+'" text-anchor="end">'+L.v+'</text>'+xl+'</svg>';
+}
+function vRecord(){
+  const R=S.readings,T=S.targets,inT=R.filter(r=>r.v>=T.lo&&r.v<=T.hi).length,avg=Math.round(R.reduce((a,r)=>a+r.v,0)/R.length);
+  const lab=S.labs[S.labs.length-1],prev=S.labs[S.labs.length-2];
+  const alerts=S.alerts.map((a,i)=>'<div class="alert '+(a.state==='open'?'':a.state==='seen'?'seen':'done')+'"><div><strong>'+a.kind+(a.v?': '+a.v+' mg/dL':'')+'</strong><div class="why">'+a.why+' Reported on WhatsApp at '+a.t+'.</div></div>'
+    +(a.state==='open'?'<div class="acts"><button class="btn" data-al="seen" data-i="'+i+'">Mark seen</button><button class="btn primary" data-al="reply" data-i="'+i+'">Reply on WhatsApp</button></div>':a.state==='seen'?'<div class="acts"><span class="chip warn">Seen</span><button class="btn primary" data-al="reply" data-i="'+i+'">Reply on WhatsApp</button></div>':'<div class="acts"><span class="chip good">Replied</span></div>')+'</div>'
+    +(a.menu?'<div class="card" style="padding:10px"><div class="eyebrow" style="margin-bottom:6px">Send to patient</div><div class="row">'+['Take your medicine and test again in 2 hours.','Please come to the clinic today.','I will call you in 10 minutes.'].map((m,k)=>'<button class="btn" data-send="'+k+'" data-i="'+i+'">'+m+'</button>').join('')+'</div></div>':'')).join('');
+  const sm=S.summary;
+  const intake=sm.intake?'<ul class="bul"><li>Symptoms: '+sm.intake.sym+'</li><li>Medicines: '+sm.intake.med+'</li><li>Diet: '+sm.intake.diet+'</li></ul>':'<span class="empty">Not collected yet. Play "Pre-visit intake".</span>';
+  const events=S.events.map(e=>'<li'+(e.fresh?' class="new"':'')+'><time>'+e.t+'</time><div><span class="src">'+e.src+'</span>'+esc(e.text)+'</div></li>').join('');
+  S.events.forEach(e=>delete e.fresh);
+  return '<div class="head"><div class="pt"><div class="av">MR</div><div><h1>Meena Rao</h1><div class="meta"><span><b>54 F</b></span><span>UHID <b>EK-20418</b></span><span>Type 2 diabetes since 2016</span><span>+91 98•••• 4120</span></div></div></div><button class="btn" data-go="scribe">'+ic('mic')+'Start consult in Scribe</button></div>'
+  +'<div class="stack">'+alerts
+  +'<div class="cols"><div class="stack">'
+  +'<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Fasting glucose, last '+R.length+' readings</h2><span class="chip wa">From WhatsApp</span></div><div class="stat" style="margin:8px 0 12px"><div><b>'+avg+'</b><span>Average mg/dL</span></div><div><b>'+inT+' of '+R.length+'</b><span>In target</span></div><div><b>'+S.adherence+' of 7</b><span>Doses taken this week</span></div></div>'+chart()+'</div>'
+  +'<div class="card"><div class="row" style="justify-content:space-between;margin-bottom:10px"><h2>Before you walk in</h2><span class="chip blue">Drafted from WhatsApp and records</span></div><dl class="kv"><dt>Intake</dt><dd>'+intake+'</dd><dt>HbA1c</dt><dd><span class="num">'+S.labs.map(l=>l.v+'% ('+l.d+')').join(' → ')+'</span>'+(S.summary.report?' <span class="chip good">New report added</span>':'')+'</dd><dt>Medicines</dt><dd>Metformin 500 mg, twice daily. Glimepiride 1 mg, before breakfast.</dd><dt>Last visit</dt><dd>8 Jul. Continue medicines, walk after dinner.</dd></dl></div>'
+  +'</div><div class="card"><h2 style="margin-bottom:4px">Activity</h2><ul class="feed">'+events+'</ul></div></div></div>';
+}
+function vOps(){
+  const waiting=S.today.filter(r=>r.st==='Checked in').length;
+  const consult=S.today.filter(r=>r.st==='In consult').length;
+  const done=S.today.filter(r=>r.st==='Done').length;
+  const onN=Object.values(S.on).filter(Boolean).length;
+  const rev=done*600;
+  const bySrc={};S.today.forEach(r=>bySrc[r.src]=(bySrc[r.src]||0)+1);
+  const maxSrc=Math.max(1,...Object.values(bySrc));
+  const bars=Object.entries(bySrc).map(([k,v])=>'<div class="b"><i style="height:'+Math.round(v/maxSrc*100)+'%"></i><em>'+k+'<br><b class="num">'+v+'</b></em></div>').join('');
+  const events=S.events.slice(0,6).map(e=>'<li><time>'+e.t+'</time><div><span class="src">'+e.src+'</span>'+esc(e.text)+'</div></li>').join('');
+  const kpi=(v,l,cls)=>'<div class="kpitile'+(cls?' '+cls:'')+'"><b class="num">'+v+'</b><span>'+l+'</span></div>';
+  return '<div class="head"><div><h1>Clinic operations</h1><p class="sub">One clinic, one doctor. A supervisor view of today\'s load and what the agent is handling on its own.</p></div><span class="chip">Wed 04 Nov</span></div>'
+  +'<div class="stack">'
+  +'<div class="kpi">'+kpi(S.today.length,'Patients today')+kpi(waiting,'Waiting now')+kpi(consult,'In consult')+kpi(done,'Completed today','good')+kpi(openAlerts(),'Open alerts',openAlerts()?'crit':'')+kpi(onN+' of '+UC.length,'Workflows on')+kpi('₹'+rev.toLocaleString('en-IN'),'Revenue today')+'</div>'
+  +'<div class="cols"><div class="card"><h2 style="margin-bottom:4px">Booked via</h2><p class="sub" style="margin-bottom:0">Where today\'s patients came from.</p><div class="bars">'+bars+'</div></div>'
+  +'<div class="card"><h2 style="margin-bottom:4px">Agent activity</h2><ul class="feed">'+(events||'<li class="empty" style="padding:8px 0">Nothing logged yet. Play a workflow.</li>')+'</ul></div></div>'
+  +'</div>';
+}
+const LINES=[['DR','How have the mornings been, Meena?'],['PT','Sugar is mostly 140 to 160 fasting. Sometimes I feel tired in the afternoon.'],['DR','Any tingling in the feet, or blurry vision?'],['PT','No tingling. Vision is fine.'],['DR','Your HbA1c is {A1C}. We keep the same tablets and add a walk after dinner.'],['PT','Okay. Can I eat rice?'],['DR','A small portion, one roti less. I will send the diet chart on WhatsApp.']];
+function lineH(l){return '<div class="ln2"><b>'+l[0]+'</b><span>'+l[1].replace('{A1C}',S.labs[S.labs.length-1].v+'%')+'</span></div>'}
+function vScribe(){
+  const c=S.scribe;
+  const tr=c.lines?LINES.slice(0,c.lines).map(lineH).join(''):'<div class="ph-empty">Press Start consult. Scribe listens and drafts the note while you talk.</div>';
+  const status=c.state==='rec'?'<span class="rec"><i></i>Listening</span>':c.state==='draft'?'<span class="chip warn">Drafting note</span>':c.state==='done'?'<span class="chip good">Draft ready</span>':'<span class="chip">Ready</span>';
+  return '<div class="head"><div><h1>Scribe consult</h1><p class="sub">Meena Rao, 54 F. Scribe opens with the pre-visit summary, listens to the consult, and drafts the note and prescription for you to confirm.</p></div>'+status+'</div>'
+  +'<div class="scribe"><div class="card stack"><div class="row" style="justify-content:space-between;align-items:flex-start"><h2>Conversation</h2><div style="text-align:right"><button class="btn primary lg" id="sstart"'+(c.state!=='idle'?' disabled':'')+'>'+ic('mic').replace('class="ic"','class="ic" style="stroke:#fff"')+'Start consult</button>'+(c.state!=='idle'?'<div class="why">Already running for this patient</div>':'')+'</div></div><div class="tr" id="tr">'+tr+'</div></div>'
+  +'<div class="card" id="note">'+(c.state==='done'||c.sent?noteHtml():'<h2>Draft note and prescription</h2><div class="ph-empty">'+(c.state==='draft'?'Drafting from the conversation, the intake and the glucose log...':'Nothing yet.')+'</div>')+'</div></div>';
+}
+function noteHtml(){
+  const avgLo=Math.min(...S.readings.map(r=>r.v)),avgHi=Math.max(...S.readings.map(r=>r.v));
+  const sec=(h,t)=>'<div class="sec"><span class="eyebrow">'+h+'</span><div class="ed" contenteditable="true" spellcheck="false">'+t+'</div></div>';
+  return '<div class="row" style="justify-content:space-between;margin-bottom:4px"><h2>Draft note and prescription</h2><span class="chip warn">Draft by Scribe. You confirm.</span></div>'
+  +sec('Complaints','Afternoon tiredness. No tingling in feet. Vision normal.')+sec('Findings','Fasting glucose '+avgLo+' to '+avgHi+' mg/dL over the logged period (WhatsApp). HbA1c '+S.labs[S.labs.length-1].v+'%'+(S.labs.length>2?' (was '+S.labs[S.labs.length-2].v+'% in June).':' (June).'))
+  +sec('Assessment','Type 2 diabetes, improving, still above fasting target.')+sec('Plan','Continue current medicines. Walk 30 minutes after dinner. Smaller rice portion. Repeat HbA1c in 3 months. Yearly eye and foot check.')
+  +'<div class="tw" style="margin-top:8px"><table class="rx"><thead><tr><th>Medicine</th><th>Dose</th><th>When</th><th>Days</th></tr></thead><tbody><tr><td>Metformin 500 mg</td><td class="num">1-0-1</td><td>After food</td><td class="num">90</td></tr><tr><td>Glimepiride 1 mg</td><td class="num">1-0-0</td><td>Before breakfast</td><td class="num">90</td></tr></tbody></table></div>'
+  +'<div class="row" style="margin-top:14px">'+(S.scribe.sent?'<span class="chip good">Plan sent to Meena on WhatsApp</span>':'<button class="btn primary lg" id="ssend">Confirm and send plan on WhatsApp</button>')+'</div>';
+}
+function scribeAfterPaint(){const b=$('#sstart');if(b)b.onclick=startScribe;const s=$('#ssend');if(s)s.onclick=sendPlan}
+let scribeRun=0;
+async function startScribe(){
+  const my=++scribeRun,c=S.scribe;c.state='rec';c.lines=0;c.sent=false;setStatus('Meena Rao','In consult');paint();
+  for(let i=1;i<=LINES.length;i++){await sleep(1100);if(my!==scribeRun||S.view!=='scribe'&&false)return;c.lines=i;if(S.view==='scribe'){const t=$('#tr');if(t){t.innerHTML=LINES.slice(0,i).map(lineH).join('');t.scrollTop=t.scrollHeight}}}
+  c.state='draft';if(S.view==='scribe')paint();await sleep(1400);if(my!==scribeRun)return;c.state='done';if(S.view==='scribe')paint();addEvent('Scribe','Consult note and prescription drafted, waiting for doctor');
+}
+function sendPlan(){S.scribe.sent=true;setStatus('Meena Rao','Done');addEvent('Doctor','Plan confirmed and sent on WhatsApp');paint();run('plan')}
+function setStatus(n,st){S.today.forEach(r=>{if(r.n===n)r.st=st})}
+
+/* ---------- Phone ---------- */
+const chat=()=>$('#chat');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let runId=0;
+function hint(){chat().innerHTML='<div class="hint">Pick a workflow and press Play, or type a message as Meena.</div>';setFlowBar(0,0)}
+function setFlowBar(step,total){
+  const bar=$('#flowbar');if(!total){bar.hidden=true;return}
+  bar.hidden=false;const s=Math.min(step,total);
+  $('#flowlbl').textContent='Step '+s+' of '+total;
+  $('#flowseg').innerHTML=Array.from({length:total},(_,i)=>'<i class="'+(i<s?'on':'')+'"></i>').join('');
+}
+function addMsg(kind,text,o={}){
+  tick();const ty=$('.typing');if(ty)ty.remove();
+  const d=document.createElement('div');d.className='msg '+kind;
+  if(kind==='sys'){d.innerHTML=esc(text);chat().appendChild(d);chat().scrollTop=chat().scrollHeight;return d}
+  let h='';if(o.who)h+='<span class="who">'+o.who+'</span>';if(o.tpl)h+='<span class="tpl">Sent as approved template, outside the 24-hour window</span>';
+  if(o.img)h+='<div class="tile">'+esc(o.img)+'</div>';if(o.doc)h+='<div class="doc"><i>PDF</i><span>'+esc(o.doc)+'</span></div>';
+  if(text)h+=esc(text).replace(/\n/g,'<br>');if(o.list)h+='<ul>'+o.list.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
+  h+='<span class="t num">'+tm()+'</span>';d.innerHTML=h;
+  const h0=$('.hint',chat());if(h0&&kind)h0.remove();
+  chat().appendChild(d);chat().scrollTop=chat().scrollHeight;return d;
+}
+function typing(){const d=document.createElement('div');d.className='msg in typing';d.innerHTML='<i></i><i></i><i></i>';chat().appendChild(d);chat().scrollTop=chat().scrollHeight}
+function choose(opts,my){
+  return new Promise(res=>{
+    const q=document.createElement('div');q.className='quick';
+    q.innerHTML=opts.map((o,i)=>'<button data-i="'+i+'">'+esc(o)+'</button>').join('');
+    q.onclick=e=>{const b=e.target.closest('button');if(!b||my!==runId)return;q.remove();addMsg('out',opts[+b.dataset.i]);res(opts[+b.dataset.i])};
+    chat().appendChild(q);chat().scrollTop=chat().scrollHeight;
+  });
+}
+function safetyCard(items,my){
+  return new Promise(res=>{
+    tick();
+    const d=document.createElement('div');d.className='msg in';d.style.padding='0';d.style.background='none';d.style.boxShadow='none';
+    d.innerHTML='<div class="safety"><div class="stitle">Any of these right now?</div><div class="sgrid">'+items.map(i=>'<div class="si"><i></i>'+esc(i)+'</div>').join('')+'</div><div class="sbtns"><button class="syes" data-v="Yes">Yes, I have one of these</button><button class="sno" data-v="No">No, none of these</button></div><div class="ssub">If this is an emergency, call 022 5555 0142</div></div>';
+    d.onclick=e=>{const b=e.target.closest('button');if(!b||my!==runId)return;const v=b.dataset.v;d.remove();addMsg('out',v==='Yes'?'Yes, I have one of these':'No, none of these');res(v)};
+    chat().appendChild(d);chat().scrollTop=chat().scrollHeight;
+  });
+}
+function billCard(price,items,my){
+  return new Promise(res=>{
+    tick();
+    const d=document.createElement('div');d.className='msg in';d.style.padding='0';d.style.background='none';d.style.boxShadow='none';
+    d.innerHTML='<div class="billcard"><div class="btitle">Consultation today</div><div class="bprice num">₹'+price+'</div><ul class="blist">'+items.map(i=>'<li>'+esc(i)+'</li>').join('')+'</ul><button class="bpay">Pay with UPI</button></div>';
+    d.onclick=e=>{if(!e.target.closest('.bpay')||my!==runId)return;d.remove();addMsg('out','Pay with UPI');res('Pay with UPI')};
+    chat().appendChild(d);chat().scrollTop=chat().scrollHeight;
+  });
+}
+const fill=(s,c)=>String(s).replace('{choice}',c.last||'');
+async function exec(steps,my,ctx){
+  for(const st of steps){
+    if(my!==runId)return;
+    if(st.a!==undefined){ctx.step=Math.min(ctx.step+1,ctx.total);setFlowBar(ctx.step,ctx.total);typing();await sleep(750);if(my!==runId)return;addMsg('in',fill(st.a,ctx),st)}
+    else if(st.p!==undefined){ctx.step=Math.min(ctx.step+1,ctx.total);setFlowBar(ctx.step,ctx.total);await sleep(450);if(my!==runId)return;addMsg('out',fill(st.p,ctx),st)}
+    else if(st.c){ctx.last=await choose(st.c,my);ctx.hist.push(ctx.last);await sleep(250)}
+    else if(st.safety){ctx.step=Math.min(ctx.step+1,ctx.total);setFlowBar(ctx.step,ctx.total);ctx.last=await safetyCard(st.safety,my);ctx.hist.push(ctx.last);await sleep(250)}
+    else if(st.bill){ctx.step=Math.min(ctx.step+1,ctx.total);setFlowBar(ctx.step,ctx.total);ctx.last=await billCard(st.bill.price,st.bill.items,my);ctx.hist.push(ctx.last);await sleep(250)}
+    else if(st.e){addEvent(st.e[0],fill(st.e[1],ctx))}
+    else if(st.d){DO[st.d](ctx)}
+    else if(st.br){await exec(BR[st.br](ctx,st),my,ctx)}
+  }
+}
+async function run(id){
+  const my=++runId;scribeRun=scribeRun;
+  if(id==='scribe'){go('scribe');return}
+  hint();$('.hint').remove();
+  const TOTALS={symptom:4,alert:4,log:3};
+  const total=TOTALS[id]||SC[id].filter(s=>s.a!==undefined||s.p!==undefined||s.safety||s.bill).length;
+  const ctx={last:'',hist:[],step:0,total};
+  setFlowBar(0,total);
+  if(window.innerWidth<=1240)$('#phonecol').scrollIntoView({behavior:'smooth',block:'center'});
+  await sleep(200);
+  addDay();
+  await exec(SC[id],my,ctx);
+}
+function addDay(){const d=document.createElement('div');d.className='day';d.textContent='Today';chat().appendChild(d)}
+
+/* ---------- Scripts ---------- */
+const A=(a,o)=>Object.assign({a},o||{}),P=(p,o)=>Object.assign({p},o||{}),C=(...c)=>({c}),E=(s,t)=>({e:[s,t]}),D=d=>({d}),B=(br,o)=>Object.assign({br},o||{}),SF=(...items)=>({safety:items}),BILL=(price,...items)=>({bill:{price,items}});
+const SLOTS=['Fri 7 Nov, 11:00','Fri 7 Nov, 4:30 pm','Sat 8 Nov, 10:00'];
+const SC={
+ book:[P('Hi, I need a follow-up with Dr. Mehta'),A('Sure. Is this for you, Meena Rao, or someone else?'),C('Me','My mother'),A('Dr. Mehta has these slots:'),C(...SLOTS),A('Booked: {choice}. Fee is ₹600, payable at the desk or by link. I will remind you the day before.'),D('addAppt'),E('WhatsApp','Appointment booked: Meena Rao, {choice}')],
+ family:[P('Can I book for my mother too?'),A('Of course. What is her name and age?'),C('Kamla Rao, 78','Someone else'),A('I have added Kamla Rao (78) under your number, with her own record. Which slot?'),C('Fri 7 Nov, 11:30'),A('Booked. I will remind both of you.'),D('addFamily'),E('WhatsApp','New patient linked to +91 98•••• 4120: Kamla Rao, 78. Appointment Fri 7 Nov, 11:30')],
+ intake:[A('Hi Meena, your visit with Dr. Mehta is today at 10:15. Four quick questions will give the doctor the full picture.',{tpl:1}),C('Start'),A('Any symptoms since your last visit?'),C('Tired often','Blurry vision','None'),A('How were your medicines this week?'),C('Took all as advised','Missed some'),A('Any change in diet?'),C('Eating out more','Same as before'),A('Thank you. If you have recent lab reports, send them here.'),D('intake'),E('WhatsApp','Intake received. Summary ready for Dr. Mehta')],
+ reports:[P('Sending my lab report'),P('',{doc:'Lab report Oct 2026.pdf'}),A('Got it. Reading the report now.'),A('I found these values:',{list:['HbA1c 7.6% (was 7.9% in June)','Fasting glucose 148 mg/dL','LDL cholesterol 112 mg/dL']}),A('Is this right?'),C('Yes, correct','No, something is wrong'),B('report')],
+ queue:[P('I have reached the clinic'),A('Welcome, Meena. You are checked in. You are 3rd in line, about 20 minutes. I will message you when it is your turn.'),C('I am running late','Okay'),B('late'),D('checkin')],
+ plan:[A('Meena, here is your plan from Dr. Mehta today.',{tpl:1,doc:'Prescription and diet chart.pdf'}),A('In short:',{list:['Metformin 500 mg, morning and night, after food','Glimepiride 1 mg, before breakfast','Walk 30 minutes after dinner','Smaller rice portion, one roti less','Repeat HbA1c in 3 months']}),A('Would you like this explained in your language?'),C('Explain in Hindi','No, thanks'),B('hindi')],
+ meds:[A('Good morning Meena. Time for Glimepiride 1 mg, before breakfast.',{tpl:1}),C('Taken','Skip today','Remind me in 30 min'),B('meds')],
+ lab:[A('Meena, your repeat HbA1c test is due. Where would you like to give the sample?',{tpl:1}),C('Home collection','Clinic lab'),A('Pick a time:'),C('Mon 9 Nov, 7:30 am','Tue 10 Nov, 8:00 am'),A('Booked: {choice}. The result goes to Dr. Mehta and comes to this chat.'),D('addLab'),E('WhatsApp','HbA1c test booked: {choice}')],
+ followup:[A('Hi Meena, your follow-up with Dr. Mehta was due on 28 Oct. Shall we find a time?',{tpl:1}),C('Yes, show slots','Not now'),B('slots')],
+ referral:[A('Dr. Mehta has advised an eye check with Sharp Eye Centre. It takes about 30 minutes and checks the back of your eye for diabetes changes.',{tpl:1}),C('Book it','Remind me later'),B('eye')],
+ log:[P('Logging my sugar'),A('Which reading would you like to add?'),C('Fasting 118','Fasting 184','Fasting 262'),B('glucose')],
+ alert:[P('My fasting sugar is 262'),B('glucose',{value:262})],
+ symptom:[P('I feel dizzy and sweaty'),SF('Fainting or can\'t stay awake','Severe confusion or seizure','Chest pain','Cannot keep fluids down'),B('safetycheck')],
+ meal:[P('',{img:'Lunch thali'}),A('Looks like roti, dal, sabzi and rice. I estimate about 520 kcal and 70 g carbs. This is an estimate, not a measurement.'),A('Dr. Mehta\'s plan suggests about 60 g carbs per meal. One roti less would bring you close.'),C('Thanks','Suggest a swap'),B('swap'),E('WhatsApp','Meal photo logged, about 70 g carbs (estimate)')],
+ ask:[P('What does HbA1c 7.6 mean?'),A('HbA1c is your average sugar over about 3 months. Dr. Mehta\'s target for you is below 7.0%. You were at 7.9% in June, so you are moving the right way.'),A('I cannot change your treatment. Want me to flag a question for Dr. Mehta?'),C('Yes, flag it','No'),B('flag')],
+ yearly:[A('Meena, your yearly kidney and foot check is due next month. Both are usually quick. Shall I book them with your next visit?',{tpl:1}),C('Yes, add to my visit','Remind me later'),B('yearly')],
+ pay:[A('Thank you for visiting today. Here is your bill.',{tpl:1}),BILL(600,'Consultation with Dr. Mehta','Today\'s prescription included'),A('Payment received. Here is your receipt.',{doc:'Receipt EK-20418.pdf'}),E('WhatsApp','Payment ₹600 received (UPI), receipt sent')],
+ feedback:[A('How was your visit with Dr. Mehta today?',{tpl:1}),C('Great','Okay','Not good'),B('fb')],
+ winback:[A('Hi Meena, we have not seen you since July. Regular checks help keep sugar in range. Would you like to book?',{tpl:1}),C('Yes, show slots','Not now'),B('slots'),E('System','Win-back list: 38 patients overdue 90 days or more')]
+};
+const BR={
+ report:(c)=>c.last.startsWith('Yes')?[A('Saved to your record. Dr. Mehta will see it before your visit.'),D('report'),E('WhatsApp','Lab report read: HbA1c 7.6%, fasting 148, LDL 112. Added to record')]:[A('No problem. I have kept the file as it is and asked the clinic team to check it.'),E('WhatsApp','Patient says report values are wrong. Needs staff reply')],
+ late:(c)=>c.last==='Okay'?[E('WhatsApp','Patient checked in via WhatsApp')]:[A('Noted. I have told the desk. They will hold your place for 15 minutes.'),E('WhatsApp','Patient checked in, running late. Desk notified')],
+ hindi:(c)=>c.last.startsWith('Explain')?[A('मेटफॉर्मिन सुबह और रात, खाने के बाद लें। ग्लिमेपिराइड नाश्ते से पहले। रात के खाने के बाद 30 मिनट टहलें।'),E('WhatsApp','Plan delivered, explained in Hindi, opened by patient')]:[E('WhatsApp','Plan delivered and opened by patient')],
+ meds:(c)=>{
+   if(c.last==='Taken')return [A('Noted. That is 6 days in a row. Well done.'),D('adhere'),E('WhatsApp','Glimepiride 1 mg taken')];
+   if(c.last.startsWith('Remind'))return [A('Okay, I will remind you in 30 minutes.')];
+   return [A('Okay. May I ask why?'),C('Felt dizzy','Ran out of tablets','Forgot'),B('skip')];
+ },
+ skip:(c)=>c.last==='Felt dizzy'?[A('Thank you for telling me. I have flagged it for Dr. Mehta. If you feel faint now, sit down and have something sweet.'),D('dizzy')]:c.last.startsWith('Ran')?[A('I have sent a refill request to the clinic pharmacy. They will confirm pickup or delivery.'),E('WhatsApp','Refill requested: Glimepiride 1 mg')]:[A('No worries. Taking it with breakfast tomorrow is fine. I will remind you again.'),E('WhatsApp','Dose skipped (forgot)')],
+ slots:(c)=>c.last.startsWith('Yes')?[A('Dr. Mehta has these slots:'),C(...SLOTS),A('Booked: {choice}. See you then.'),D('addAppt'),E('WhatsApp','Follow-up booked: {choice}')]:[A('Okay. I will check in again next week.'),E('WhatsApp','Follow-up deferred by patient. Retry in 7 days')],
+ eye:(c)=>c.last==='Book it'?[A('Booked: Sat 15 Nov, 10:00 at Sharp Eye Centre. I will send you directions, and the report will go to Dr. Mehta.'),D('addEye'),E('WhatsApp','Referral booked: eye check, Sat 15 Nov, 10:00')]:[A('Okay. I will remind you next week.'),E('WhatsApp','Referral reminder deferred')],
+ yearly:(c)=>c.last.startsWith('Yes')?[A('Added. Please come fasting for the kidney test.'),E('WhatsApp','Yearly kidney and foot check added to next visit')]:[A('Okay. I will ask again in two weeks.'),E('WhatsApp','Yearly check reminder deferred')],
+ glucose:(c,st)=>{
+   const v=st.value||+((c.last.match(/\d+/)||[0])[0]),T=S.targets;c.val=v;
+   if(v<=T.hi)return [A(v+' mg/dL is within your target ('+T.lo+' to '+T.hi+'). Added to your chart.'),D('reading'),E('WhatsApp','Fasting '+v+' mg/dL logged, in target')];
+   if(v<T.alert)return [A(v+' mg/dL is above your target of '+T.hi+'. Did anything change yesterday?'),C('Ate a late dinner','Missed a medicine','Nothing changed'),A('Thank you. I have added it for Dr. Mehta. A short walk and water can help. I will ask again tomorrow morning.'),D('reading'),E('WhatsApp','Fasting '+v+' mg/dL logged, above target. Reason: '+(c.last||'not given'))];
+   return [A(v+' mg/dL is high.'),SF('Very thirsty','Vomiting','Blurry vision','Confusion'),B('urgent'),D('reading'),D('alertHigh')];
+ },
+ safetycheck:(c)=>c.last==='Yes'?[A('Please call the clinic now on 022 5555 0142, or go to the nearest emergency room. I have alerted Dr. Mehta.'),D('alertSym')]:[A('I am sorry you feel unwell. Did you take your tablets and have food today?'),C('Took tablets, skipped lunch','Not sure'),A('This could be low sugar. If you can, test now. If it is below 70, take 3 glucose tablets or a spoon of sugar, then test again in 15 minutes.'),C('Reading is 62','I cannot test'),B('hypo')],
+ urgent:(c)=>c.last==='Yes'?[A('Please call the clinic now on 022 5555 0142, or go to the nearest emergency room. I have alerted Dr. Mehta.')]:[A('Please drink water, take your medicine as prescribed, and test again in 2 hours. I have alerted Dr. Mehta.')],
+ hypo:(c)=>c.last.startsWith('Reading')?[A('62 is low. Take sugar now. I have alerted Dr. Mehta and the clinic will call you within 10 minutes.'),D('alertLow')]:[A('If you feel faint or confused, take sugar now. I have alerted the clinic and they will call you within 10 minutes.'),D('alertSym')],
+ swap:(c)=>c.last==='Thanks'?[]:[A('Swap most of the white rice for a bowl of salad or dal. Keep one roti.')],
+ flag:(c)=>c.last.startsWith('Yes')?[A('Done. Dr. Mehta will see your question at your visit.'),E('WhatsApp','Patient question flagged: HbA1c target')]:[],
+ fb:(c)=>c.last==='Great'?[A('Thank you. Would you share this on Google reviews?'),E('WhatsApp','Feedback: great. Review link sent')]:c.last==='Okay'?[A('Thanks for telling us. Anything we could do better?'),E('WhatsApp','Feedback: okay')]:[A('I am sorry. A member of the clinic team will call you today.'),E('WhatsApp','Feedback: not good. Staff call-back task created')]
+};
+/* hypo/alert helpers need the raw branch for glucose with preset value */
+const DO={
+ addAppt:c=>{const w=c.last&&/\d/.test(c.last)?c.last:'Fri 7 Nov, 11:00';S.upcoming.unshift({n:'Meena Rao',w,src:'WhatsApp'})},
+ addFamily:c=>{S.upcoming.unshift({n:'Kamla Rao (linked)',w:'Fri 7 Nov, 11:30',src:'WhatsApp'})},
+ addLab:c=>{S.upcoming.unshift({n:'Meena Rao',w:c.last+', home collection',src:'Lab, HbA1c'})},
+ addEye:c=>{S.upcoming.unshift({n:'Meena Rao',w:'Sat 15 Nov, 10:00, Sharp Eye Centre',src:'Referral'})},
+ intake:c=>{const h=c.hist;S.summary.intake={sym:h[1],med:h[2],diet:h[3]}},
+ report:c=>{if(!S.summary.report){S.labs.push({d:'Oct 2026',v:7.6});S.summary.report=true}},
+ checkin:c=>{setStatus('Meena Rao','Checked in')},
+ adhere:c=>{S.adherence=Math.min(7,S.adherence+1)},
+ reading:c=>{S.readings.push({d:'Nov 4',v:c.val});if(S.readings.length>16)S.readings.shift()},
+ alertHigh:c=>raise(c,'High reading',c.val,c.hist.includes('Yes')?'Patient reports danger signs and was told to call or go to emergency.':'No danger signs reported. Told to hydrate, take medicine, retest in 2 hours.'),
+ alertLow:c=>raise(c,'Low reading',62,'Dizzy and sweaty after skipping lunch. Told to take sugar and retest. Call-back within 10 minutes.'),
+ alertSym:c=>raise(c,'Symptoms, low sugar suspected',0,'Dizzy and sweaty, could not test. Told to take sugar. Call-back within 10 minutes.'),
+ dizzy:c=>raise(c,'Dizziness after dose',0,'Patient skipped Glimepiride because of dizziness.')
+};
+function raise(c,kind,v,why){S.alerts.unshift({kind,v,why,t:tm(),state:'open'});drawNav();addEvent('WhatsApp','Alert raised: '+kind+(v?' '+v+' mg/dL':''))}
+
+/* ---------- Free text ---------- */
+$('#form').addEventListener('submit',async e=>{
+  e.preventDefault();const i=$('#msg'),v=i.value.trim();if(!v)return;i.value='';
+  const my=++runId;const q=$('.quick');if(q)q.remove();addMsg('out',v);
+  typing();await sleep(800);if(my!==runId)return;
+  addMsg('in','I am not sure I can answer that safely. I have asked the clinic team to reply, usually within 30 minutes. If this is urgent, call 022 5555 0142.');
+  addEvent('WhatsApp','Needs staff reply: "'+v.slice(0,60)+'"');
+});
+
+/* ---------- Events ---------- */
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.v)});
+$('#main').addEventListener('click',e=>{
+  const t=e.target.closest('button');if(!t)return;
+  if(t.id==='jnext')playJourneyNext();
+  else if(t.id==='jreset'){S.jstep=0;chat().innerHTML='';hint();paint()}
+  else if(t.dataset.play)run(t.dataset.play);
+  else if(t.dataset.tg){S.on[t.dataset.tg]=!S.on[t.dataset.tg];paint()}
+  else if(t.dataset.f!==undefined){S.filter=+t.dataset.f;paint()}
+  else if(t.dataset.go)go(t.dataset.go);
+  else if(t.dataset.al){const a=S.alerts[+t.dataset.i];if(t.dataset.al==='seen'){a.state='seen';addEvent('Doctor','Alert marked seen')}else{a.menu=true;a.state=a.state==='open'?'seen':a.state}drawNav();paint()}
+  else if(t.dataset.send!==undefined){const a=S.alerts[+t.dataset.i];const m=['Take your medicine and test again in 2 hours.','Please come to the clinic today.','I will call you in 10 minutes.'][+t.dataset.send];
+    a.state='done';a.menu=false;addMsg('in',m,{who:'Dr. Mehta'});addEvent('Doctor','Replied on WhatsApp: '+m);drawNav();paint();
+    if(window.innerWidth<=1240)$('#phonecol').scrollIntoView({behavior:'smooth',block:'center'})}
+});
+$('#main').addEventListener('input',e=>{const t=e.target.dataset.t;if(t){const n=+e.target.value;if(n>0){S.targets[t]=n}}});
+$('#reset').onclick=()=>{runId++;scribeRun++;S=fresh();hint();paint()};
+$('#clearchat').onclick=()=>{runId++;hint()};
+window.addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS.some(x=>x[0]===v)&&v!==S.view){S.view=v;paint()}});
+const h0=location.hash.slice(1);if(VIEWS.some(x=>x[0]===h0))S.view=h0;
+hint();paint();
+})();
+</script>
+</body></html>

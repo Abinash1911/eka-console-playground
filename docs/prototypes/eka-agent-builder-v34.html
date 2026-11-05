@@ -1,0 +1,1657 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<title>Eka Agent Builder</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Eka Console shell. Thin icon rail that opens on hover; pages use the full screen width. Doctor-first front door (two paths, three steps), full depth under Configure. Eka violet on violet-grey neutrals, light only like the console. */
+:root{
+  --v:#6B5CE0; --v-dark:#5042BD; --v-50:#F1EFFC; --v-100:#E4E0FA; --v-200:#CDC6F5;
+  --ink:#1A191D; --g800:#28282C; --g700:#414145; --g600:#535256; --g500:#737276; --g400:#A1A1A5;
+  --g300:#D1D0D4; --g200:#E1E1E5; --g100:#F1F0F4; --g50:#F6F5F9; --line:#E9E8ED; --white:#FFFFFF;
+  --ok:#067647; --ok-bg:#ECFDF3; --ok-line:#ABEFC6;
+  --warn:#B54708; --warn-bg:#FFFAEB; --warn-line:#FEDF89;
+  --bad:#B42318; --bad-bg:#FEF3F2; --bad-line:#FECDCA;
+  --info:#175CD3; --info-bg:#EFF8FF;
+  --sh:0 1px 2px rgba(13,13,17,.04),0 10px 24px -18px rgba(107,92,224,.28);
+  --sh-pop:0 24px 64px -12px rgba(13,13,17,.3);
+  --font:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--g50);color:var(--g700);font-family:var(--font);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0;padding:0}
+:focus-visible{outline:2px solid var(--v);outline-offset:2px}
+svg{display:block}
+[hidden]{display:none!important}
+.ico{display:inline-grid;place-items:center;flex:0 0 auto}
+.grow{flex:1;min-width:0}
+.row{display:flex;align-items:center;gap:10px}
+.stack{display:flex;flex-direction:column;gap:12px}
+.mono{font-family:var(--mono);font-size:12px}
+h1,h2,h3,h4{color:var(--ink);margin:0;text-wrap:balance;letter-spacing:-.015em}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.in{animation:rise .5s var(--ease) backwards;animation-delay:calc(var(--i,0) * 60ms)}
+@keyframes rise{from{transform:translateY(10px)}to{transform:none}}
+
+/* rail */
+.rail{position:fixed;inset:0 auto 0 0;width:64px;background:var(--white);border-right:1px solid var(--line);z-index:40;display:flex;flex-direction:column;overflow:hidden;transition:width .22s var(--ease),box-shadow .22s;padding-left:env(safe-area-inset-left,0px)}
+.rail:hover,.rail:focus-within{width:240px;box-shadow:var(--sh-pop)}
+.brand{display:flex;align-items:center;gap:12px;padding:16px 14px 12px;white-space:nowrap}
+.mark{width:36px;height:36px;border-radius:10px;background:var(--v);color:#fff;display:grid;place-items:center;font-weight:700;font-size:17px;flex:0 0 auto}
+.brand b{display:block;color:var(--ink);font-size:14px}.brand small{color:var(--g500);font-size:12px}
+.nav{flex:1;overflow-y:auto;overflow-x:hidden;padding:4px 10px}
+.nav h6{margin:14px 8px 4px;font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;height:16px;opacity:0;transition:opacity .15s}
+.rail:hover h6,.rail:focus-within h6{opacity:1}
+.ni{display:flex;align-items:center;gap:12px;width:100%;padding:8px 11px;border-radius:10px;color:var(--g600);white-space:nowrap;font-weight:500}
+.ni:hover{background:var(--g100);color:var(--ink)}
+.ni.on{background:var(--v-50);color:var(--v-dark)}
+.ni span:last-child{opacity:0;transition:opacity .15s}
+.rail:hover .ni span:last-child,.rail:focus-within .ni span:last-child{opacity:1}
+.me{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line);white-space:nowrap}
+.me .pic{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#E64BB5,#B13BE0);color:#fff;font-weight:600;display:grid;place-items:center;flex:0 0 auto}
+.me b{display:block;color:var(--ink);font-size:13px}.me small{color:var(--g500);font-size:12px}
+.main{margin-left:64px;min-height:100%;display:flex;flex-direction:column}
+.wrap{width:100%;max-width:none;margin:0 auto;padding-block:32px 110px;padding-left:max(24px,env(safe-area-inset-left,0px));padding-right:max(20px,env(safe-area-inset-right,0px))}
+@media (min-width:900px){.wrap{padding-left:40px;padding-right:40px}}
+
+/* buttons, tags */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:38px;padding:0 15px;border-radius:12px;font-weight:600;font-size:14px;border:1px solid var(--g200);background:var(--white);color:var(--g800);white-space:nowrap;transition:background .15s,border-color .15s,transform .1s}
+.btn:hover{background:var(--g50);border-color:var(--g300)}
+.btn:active{transform:scale(.98)}
+.btn.pri{background:var(--v);border-color:var(--v);color:#fff}
+.btn.pri:hover{background:var(--v-dark);border-color:var(--v-dark)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--g600)}
+.btn.ghost:hover{background:var(--g100);color:var(--ink)}
+.btn.soft{background:var(--v-50);border-color:var(--v-100);color:var(--v-dark)}
+.btn.soft:hover{background:var(--v-100)}
+.btn.danger{color:var(--bad);border-color:var(--bad-line)}
+.btn.danger:hover{background:var(--bad-bg)}
+.btn.sm{height:30px;padding:0 11px;font-size:13px;border-radius:9px}
+.btn[disabled]{opacity:.45;cursor:not-allowed;transform:none}
+.link{color:var(--v-dark);font-weight:600}
+.link:hover{text-decoration:underline}
+.tag{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap;border:1px solid transparent}
+.tag.ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-line)}
+.tag.dr{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.tag.v{background:var(--v-50);color:var(--v-dark);border-color:var(--v-100)}
+.tag.n{background:var(--g100);color:var(--g600);border-color:var(--g200)}
+.tag.i{background:var(--info-bg);color:var(--info);border-color:#B2DDFF}
+.tag.bad{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-line)}
+.tag.up{text-transform:uppercase;letter-spacing:.05em;font-size:10.5px}
+code,.var{font-family:var(--mono);font-size:12px;background:var(--v-50);border:1px solid var(--v-100);border-radius:6px;padding:1px 6px;color:var(--v-dark)}
+
+/* cards, forms */
+.card{background:var(--white);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh)}
+.pad{padding:26px}
+.fld{display:flex;flex-direction:column;gap:7px;min-width:0}
+.lbl{font-weight:600;color:var(--ink);font-size:14px;display:flex;align-items:center;gap:8px}
+.help{font-size:13px;color:var(--g500)}
+.inp,.ta,.sel{width:100%;border:1px solid var(--g200);border-radius:10px;background:var(--white);padding:10px 12px;font-size:14px;color:var(--ink);transition:border-color .15s,box-shadow .15s}
+.inp:focus,.ta:focus,.sel:focus{outline:none;border-color:var(--v);box-shadow:0 0 0 4px var(--v-50)}
+.inp::placeholder,.ta::placeholder{color:var(--g400)}
+.ta{resize:vertical;min-height:110px;line-height:1.6}
+.sel{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23737276' stroke-width='2.4'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:34px}
+.inp.err{border-color:var(--bad);box-shadow:0 0 0 4px var(--bad-bg)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:760px){.g2,.g3{grid-template-columns:1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--g200);background:var(--white);color:var(--g700);font-weight:500;font-size:13.5px;transition:all .15s}
+.chip:hover{border-color:var(--v-200);color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--v-50);border-color:var(--v);color:var(--v-dark)}
+.checks-in{display:flex;flex-wrap:wrap;gap:10px}
+.chk{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border:1px solid var(--g200);border-radius:10px;font-weight:500;cursor:pointer;background:var(--white)}
+.chk input{accent-color:var(--v);width:16px;height:16px;margin:0}
+.sw{position:relative;width:38px;height:22px;flex:0 0 auto}
+.sw input{position:absolute;inset:0;opacity:0;margin:0;cursor:pointer;z-index:1}
+.sw i{position:absolute;inset:0;border-radius:999px;background:var(--g300);transition:background .15s}
+.sw i::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s var(--ease)}
+.sw input:checked+i{background:var(--v)}
+.sw input:checked+i::after{transform:translateX(16px)}
+.sw input:focus-visible+i{outline:2px solid var(--v);outline-offset:2px}
+.rowcard{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--white)}
+.rowcard b{color:var(--ink);display:block}
+.untouched{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--g500);background:var(--g100);border-radius:6px;padding:2px 6px}
+
+/* option cards */
+.opts{display:grid;gap:12px}
+.opts.c3{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:820px){.opts.c3{grid-template-columns:1fr}}
+.opt{display:flex;flex-direction:column;gap:6px;text-align:left;padding:18px;border:1px solid var(--line);border-radius:14px;background:var(--white);transition:border-color .15s,box-shadow .2s;position:relative}
+.opt:hover{border-color:var(--v-200)}
+.opt[aria-pressed="true"]{border-color:var(--v);box-shadow:0 0 0 3px var(--v-50)}
+.opt b{color:var(--ink);font-weight:600}
+.opt span.d{font-size:13px;color:var(--g500)}
+.tile{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto}
+.tick{position:absolute;top:14px;right:14px;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--g300);display:grid;place-items:center;color:#fff}
+[aria-pressed="true"]>.tick{background:var(--v);border-color:var(--v)}
+
+/* agents */
+.ph{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.ph h1{font-size:30px;line-height:1.2}
+.ph p{margin:4px 0 0;color:var(--g500)}
+.crumb{font-size:13px;color:var(--g500);margin-bottom:6px}
+.crumb button{color:var(--g500)}.crumb button:hover{color:var(--v-dark)}
+.hero{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center;padding:24px 26px;margin-bottom:20px;background:linear-gradient(125deg,#5042BD 0%,#6B5CE0 55%,#8F6BF2 100%);border-radius:18px;color:#fff}
+.hero h2{color:#fff;font-size:22px}
+.hero p{margin:6px 0 0;color:rgba(255,255,255,.85);max-width:62ch}
+.hsteps{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+.hsteps span{font-size:12.5px;font-weight:600;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.32);border-radius:999px;padding:4px 10px}
+.btn.white{background:#fff;border-color:#fff;color:var(--v-dark)}
+.btn.white:hover{background:var(--v-50)}
+@media (max-width:760px){.hero{grid-template-columns:1fr}}
+.tbar{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.search{position:relative;width:min(300px,100%)}
+.search .ico{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--g400)}
+.search input{padding-left:34px}
+.seg{display:inline-flex;background:var(--g100);border-radius:10px;padding:3px;gap:2px}
+.seg button{height:30px;padding:0 12px;border-radius:8px;font-weight:600;font-size:13px;color:var(--g600)}
+.seg button[aria-pressed="true"]{background:var(--white);color:var(--ink);box-shadow:0 1px 3px rgba(13,13,17,.12)}
+.arow{display:grid;grid-template-columns:minmax(0,2.2fr) 1.3fr 1.8fr 1fr 44px;gap:16px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line);transition:background .15s;cursor:pointer;position:relative}
+.arow:last-child{border-bottom:0}
+.arow:hover{background:var(--g50)}
+.arow.head{cursor:default;padding-block:10px;font-size:11.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--g500)}
+.arow.head:hover{background:transparent}
+.av{width:36px;height:36px;border-radius:10px;background:var(--v-50);color:var(--v-dark);display:grid;place-items:center;font-weight:700;flex:0 0 auto}
+.arow b{color:var(--ink);font-weight:600}
+.arow small{display:block;color:var(--g500);font-size:12.5px}
+.feats{display:flex;flex-wrap:wrap;gap:4px}
+@media (max-width:860px){.arow{grid-template-columns:1fr 44px}.arow .hs{display:none}}
+.fresh{animation:flash 2.6s var(--ease)}
+@keyframes flash{0%,40%{background:var(--ok-bg)}100%{background:transparent}}
+.menu{position:absolute;right:16px;top:calc(100% - 8px);z-index:30;min-width:200px;background:var(--white);border:1px solid var(--line);border-radius:12px;box-shadow:var(--sh-pop);padding:6px;display:flex;flex-direction:column}
+.menu button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;text-align:left;font-size:13.5px;color:var(--g700)}
+.menu button:hover{background:var(--g50);color:var(--ink)}
+.menu button.del{color:var(--bad)}
+.menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+.icon-btn{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--g500)}
+.icon-btn:hover{background:var(--g100);color:var(--ink)}
+
+/* start */
+.start-h{max-width:none;margin:8px auto 30px;text-align:center}
+.start-h h1{font-size:34px;line-height:1.15}
+.start-h p{color:var(--g500);margin:10px auto 0;max-width:54ch}
+.paths{display:grid;grid-template-columns:1.2fr 1fr;gap:16px;max-width:none;margin:0 auto}
+@media (max-width:820px){.paths{grid-template-columns:1fr}}
+.path{display:flex;flex-direction:column;gap:12px;text-align:left;padding:28px;border:1px solid var(--line);border-radius:18px;background:var(--white);box-shadow:var(--sh);transition:border-color .15s,transform .2s}
+.path:hover{border-color:var(--v-200);transform:translateY(-2px)}
+.path.rec{border-color:var(--v-200);background:linear-gradient(170deg,var(--v-50),#fff 55%)}
+.path h2{font-size:24px}
+.path p{margin:0;color:var(--g500)}
+.path ul{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.path li{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.path li .ico{margin-top:3px;color:var(--ok)}
+.path .foot{margin-top:auto;padding-top:8px}
+
+/* stepper + wizard */
+.stepper{display:flex;align-items:center;gap:12px;margin:0 auto 28px;max-width:none}
+.sp{display:flex;align-items:center;gap:10px;color:var(--g400);font-weight:600;white-space:nowrap}
+.sp .n{width:28px;height:28px;border-radius:50%;border:1.5px solid var(--g300);display:grid;place-items:center;font-size:12.5px;background:var(--white)}
+.sp.on{color:var(--v-dark)}.sp.on .n{background:var(--v);border-color:var(--v);color:#fff}
+.sp.done{color:var(--g700)}.sp.done .n{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
+.sp-line{flex:1;height:2px;border-radius:2px;background:var(--line);min-width:20px}
+@media (max-width:620px){.sp .t{display:none}}
+.wz{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:24px;align-items:start}
+.wz.solo{grid-template-columns:minmax(0,1fr)}
+@media (max-width:980px){.wz{grid-template-columns:1fr}}
+.q{padding:26px 0;border-bottom:1px solid var(--line)}
+.q:first-child{padding-top:0}.q:last-child{border-bottom:0;padding-bottom:0}
+.q h2{font-size:19px}
+.q .sub{margin:4px 0 16px;color:var(--g500);font-size:13.5px}
+.wfoot{position:sticky;bottom:0;z-index:20;background:rgba(255,255,255,.96);backdrop-filter:blur(8px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px);margin-top:auto}
+.wfoot-in{max-width:none;margin:0 auto;display:flex;align-items:center;gap:12px;padding:12px max(20px,env(safe-area-inset-right,0px)) 12px max(24px,env(safe-area-inset-left,0px))}
+@media (min-width:900px){.wfoot-in{padding-left:40px;padding-right:40px}}
+.saved{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--g500)}
+.saved i{width:7px;height:7px;border-radius:50%;background:var(--g300)}
+.saved.ok i{background:var(--ok)}
+.feat-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:620px){.feat-grid{grid-template-columns:1fr}}
+.feat{display:flex;gap:12px;align-items:flex-start;text-align:left;padding:15px 40px 15px 15px;border:1px solid var(--line);border-radius:14px;background:var(--white);transition:border-color .15s,box-shadow .2s;position:relative}
+.feat:hover{border-color:var(--v-200)}
+.feat[aria-pressed="true"]{border-color:var(--v);box-shadow:0 0 0 3px var(--v-50)}
+.feat b{display:block;color:var(--ink);font-weight:600;font-size:14px}
+.feat span.d{display:block;font-size:12.5px;color:var(--g500);line-height:1.45;margin-top:2px}
+.feat .tick{top:12px;right:12px;width:18px;height:18px}
+.feat .sug{display:inline-block;margin-top:6px}
+.ex{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ex button{font-size:12.5px;color:var(--v-dark);border:1px dashed var(--v-200);border-radius:8px;padding:4px 9px;background:var(--white)}
+.ex button:hover{background:var(--v-50)}
+.side{position:sticky;top:24px}
+.side .card{padding:20px}
+.side h3{font-size:16px}
+.side .sub{font-size:13px;color:var(--g500);margin:3px 0 12px}
+.su{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.su .tile{width:30px;height:30px;border-radius:8px}
+.su b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+.su .d{font-size:12.5px;color:var(--g500);line-height:1.45}
+.su .num{font-weight:700;color:var(--v-dark);margin-left:auto;padding-left:8px;font-variant-numeric:tabular-nums}
+.bump{animation:bump .45s var(--ease)}
+@keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+.banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:var(--v-50);border:1px solid var(--v-100);color:var(--v-dark);font-size:13.5px;margin-bottom:16px}
+.banner .t{color:var(--g700)}
+.banner.ok{background:var(--ok-bg);border-color:var(--ok-line);color:var(--ok)}
+.banner.warn{background:var(--warn-bg);border-color:var(--warn-line);color:var(--warn)}
+
+/* chat (test) */
+.window{border:1px solid var(--line);border-radius:18px;background:var(--white);overflow:hidden;display:flex;flex-direction:column;height:620px;max-height:calc(100vh - 200px);min-height:460px;box-shadow:var(--sh-pop);position:relative}
+.bothead{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--white)}
+.bothead.dark{background:#1F1D2B;border-bottom-color:#1F1D2B}
+.bothead .bav{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;position:relative;flex:0 0 auto}
+.bothead .bav::after{content:"";position:absolute;right:0;bottom:0;width:9px;height:9px;border-radius:50%;background:#12B76A;border:2px solid #fff}
+.bothead.dark .bav::after{border-color:#1F1D2B}
+.bothead b{display:block;font-size:14px}
+.bothead small{font-size:12px;color:var(--g500)}
+.bothead.dark small{color:#B5B3C1}
+.bothead.dark .btn.ghost{color:#D9D7E3}.bothead.dark .btn.ghost:hover{background:rgba(255,255,255,.08)}
+.msgs{flex:1;overflow-y:auto;padding:16px 14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:84%;padding:10px 13px;border-radius:14px;font-size:13.5px;line-height:1.5;white-space:pre-line;overflow-wrap:anywhere;animation:rise .3s var(--ease) backwards}
+.m.bot{background:var(--white);color:var(--g800);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:4px}
+.m.you{color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.tc{align-self:flex-start;display:flex;flex-wrap:wrap;gap:5px}
+.tc span{font-family:var(--mono);font-size:11px;color:#0E7F74;background:#EAF8F5;border:1px solid #9EE0D4;border-radius:6px;padding:2px 7px;display:inline-flex;align-items:center;gap:5px}
+.slotcard{align-self:flex-start;background:var(--white);border:1px solid var(--line);border-radius:14px;padding:12px;max-width:90%}
+.slotcard b{display:block;color:var(--ink);font-size:13.5px}
+.slotcard small{color:var(--g500);font-size:12px}
+.slots{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.slots button{font-size:12.5px;font-weight:600;border:1px solid var(--v-200);border-radius:8px;padding:5px 9px;background:var(--v-50);color:var(--v-dark)}
+.qr{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px}
+.qr button{font-size:12.5px;font-weight:500;color:var(--v-dark);background:var(--white);border:1px solid var(--v-200);border-radius:999px;padding:6px 11px}
+.qr button:hover{background:var(--v-50)}
+.cin{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line);background:var(--white)}
+.cin input{flex:1;min-width:0;border:0;outline:0;font-size:13.5px;padding:8px 4px;background:transparent}
+.cin .ib{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:var(--g500)}
+.cin .ib:hover{background:var(--g100)}
+.cin .send{color:#fff}
+.pow{text-align:center;font-size:11px;color:var(--g400);padding:0 0 8px;background:var(--white)}
+.typing{align-self:flex-start;display:flex;gap:4px;padding:12px 14px;background:var(--white);border:1px solid var(--line);border-radius:14px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--g400);animation:bl 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bl{0%,100%{opacity:.3}50%{opacity:1}}
+.fbov{position:absolute;inset:0;z-index:3;background:rgba(24,22,32,.45);display:grid;place-items:center;padding:20px}
+.fbov .card{padding:20px;width:100%;max-width:320px;text-align:center}
+.fbov .rates{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0}
+.fbov .rates button{border:1px solid var(--g200);border-radius:10px;padding:8px 4px;font-size:12.5px;font-weight:600}
+.fbov .rates button[aria-pressed="true"]{border-color:var(--v);background:var(--v-50);color:var(--v-dark)}
+.ck{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-top:1px solid var(--line)}
+.ck .ci{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;background:var(--ok-bg);color:var(--ok)}
+.ck .ci.w{background:var(--warn-bg);color:var(--warn)}
+.ck b{display:block;color:var(--ink);font-size:13.5px;font-weight:600}
+.ck .d{font-size:12.5px;color:var(--g500)}
+
+/* configure */
+.chead{display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:24px}
+.chead h1{font-size:28px}
+.idpill{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-family:var(--mono);font-size:11.5px;color:var(--g500);background:var(--g100);border-radius:6px;padding:3px 8px;max-width:min(460px,100%);overflow:hidden;white-space:nowrap}
+.idpill span{overflow:hidden;text-overflow:ellipsis}
+.idpill:hover{color:var(--ink)}
+.cfg{display:grid;grid-template-columns:230px minmax(0,1fr);gap:32px;align-items:start}
+@media (max-width:900px){.cfg{grid-template-columns:1fr;gap:16px}}
+.cnav{position:sticky;top:20px;display:flex;flex-direction:column;gap:2px}
+@media (max-width:900px){.cnav{position:static;flex-direction:row;overflow-x:auto;scrollbar-width:none}}
+.cnav button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:9px;color:var(--g600);font-weight:500;text-align:left;white-space:nowrap}
+.cnav button:hover{background:var(--g100);color:var(--ink)}
+.cnav button.on{background:var(--v-50);color:var(--v-dark)}
+.cnav .c{margin-left:auto;font-size:11.5px;font-weight:600;color:var(--g400);font-variant-numeric:tabular-nums}
+.cnav .grp{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--g400);padding:14px 10px 4px}
+@media (max-width:900px){.cnav .grp{display:none}}
+.sec-h{display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.sec-h h2{font-size:22px}
+.sec-h p{margin:4px 0 0;color:var(--g500);max-width:64ch}
+.pgrid{display:grid;grid-template-columns:minmax(0,1fr) 230px;gap:18px;align-items:start}
+@media (max-width:1060px){.pgrid{grid-template-columns:1fr}}
+.editor{font-family:var(--mono);font-size:12.8px;line-height:1.7;min-height:420px}
+.vbar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;font-size:12.5px;color:var(--g500);margin-top:10px}
+.vbar b{color:var(--ink);font-variant-numeric:tabular-nums}
+.railbox{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--g50)}
+.railbox h4{font-size:14px;margin-bottom:8px}
+.vrow{display:flex;align-items:center;gap:6px;padding:4px 0}
+.vrow .var{cursor:pointer}
+.vadd{display:flex;gap:6px;margin-top:8px}
+.vadd input{padding:7px 9px;font-size:12.5px}
+.li{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.li:last-child{border-bottom:0}
+.li b{color:var(--ink);font-weight:600;font-size:14px}
+.li .d{display:block;font-size:12.5px;color:var(--g500)}
+.trows{border-top:1px solid var(--line);background:var(--g50);padding:4px 18px 12px}
+.tgrp{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--g500);margin:12px 0 2px;display:flex;align-items:center;gap:8px}
+.tr{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.tr:last-child{border-bottom:0}
+.tr .tn{font-family:var(--mono);font-size:12.5px;color:var(--ink)}
+.tr .td{font-size:12px;color:var(--g500)}
+.tcount{font-weight:600;color:#9E2FC7;font-size:12.5px;white-space:nowrap}
+.drop{display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px;border:1.5px dashed var(--v-200);border-radius:14px;background:var(--white);text-align:center;color:var(--g500);font-size:13.5px;cursor:pointer;margin-bottom:14px}
+.drop:hover{background:var(--v-50)}
+.drop b{color:var(--v-dark)}
+.ds{width:100%;border-collapse:collapse;font-size:12.5px}
+.ds th{text-align:left;font-weight:600;color:var(--g500);padding:8px 12px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+.ds td{padding:8px 12px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.dsw{overflow-x:auto;border-top:1px solid var(--line);background:var(--g50)}
+.range{width:100%;accent-color:var(--v)}
+.qrrow{display:flex;gap:8px;align-items:center}
+.access{display:grid;grid-template-columns:1fr 1fr;border:1.5px dashed var(--warn-line);background:var(--warn-bg);border-radius:14px;overflow:hidden;margin-bottom:14px}
+.access>div{padding:16px 18px;min-width:0}
+.access>div+div{border-left:1px dashed var(--warn-line)}
+@media (max-width:820px){.access{grid-template-columns:1fr}.access>div+div{border-left:0;border-top:1px dashed var(--warn-line)}}
+.access h4{font-size:14px;margin-bottom:6px}
+.access ol{margin:0;padding-left:18px;font-size:13px;color:var(--g600)}
+.apg{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+@media (max-width:1060px){.apg{grid-template-columns:1fr}}
+.thumb{width:52px;height:52px;border-radius:12px;border:1px solid var(--line);display:grid;place-items:center;background:var(--g50);flex:0 0 auto}
+.swatch{width:40px;height:36px;border:1px solid var(--g200);border-radius:8px;padding:2px;background:var(--white);cursor:pointer}
+pre.snip{margin:0;font-family:var(--mono);font-size:12px;line-height:1.6;background:#1F1D2B;color:#E6E3F5;border-radius:12px;padding:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+
+/* history */
+.vlist{display:flex;flex-direction:column}
+.ve{display:flex;gap:12px;padding:14px 4px;border-bottom:1px solid var(--line);text-align:left;width:100%;border-radius:8px}
+.ve:hover{background:var(--g50)}
+.ve .dot{width:12px;height:12px;border-radius:50%;margin-top:5px;flex:0 0 auto;border:2px solid var(--g300);background:#fff}
+.ve .dot.live{border-color:var(--v);background:var(--v)}
+.ve b{color:var(--ink);font-size:13.5px}
+.ve .d{font-size:12.5px;color:var(--g500)}
+.diff{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:10px}
+.diff .dr{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+.diff .dr:last-child{border-bottom:0}
+.diff .dr b{color:var(--ink)}
+.diff del{color:var(--bad);background:var(--bad-bg);text-decoration:line-through;border-radius:4px;padding:0 3px}
+.diff ins{color:var(--ok);background:var(--ok-bg);text-decoration:none;border-radius:4px;padding:0 3px}
+
+/* overlays */
+.scrim{position:fixed;inset:0;z-index:60;background:rgba(26,25,29,.38);opacity:0;transition:opacity .25s}
+.scrim.on{opacity:1}
+.drawer{position:fixed;top:0;right:0;bottom:0;z-index:61;width:min(460px,100vw);background:var(--g50);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .35s var(--ease);box-shadow:var(--sh-pop);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.drawer.wide{width:min(620px,100vw);background:var(--white)}
+.drawer.on{transform:none}
+.drawer .dh{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line);background:var(--white)}
+.drawer .dh h3{font-size:17px}
+.drawer .db{flex:1;overflow-y:auto;padding:16px 18px}
+.drawer .window{border:0;border-radius:0;height:auto;flex:1;max-height:none;box-shadow:none}
+.modal{position:fixed;left:50%;top:50%;z-index:71;width:min(480px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;background:var(--white);border-radius:16px;box-shadow:var(--sh-pop);transform:translate(-50%,-48%);opacity:0;transition:all .22s var(--ease)}
+.modal.wide{width:min(760px,calc(100vw - 32px))}
+.modal.on{opacity:1;transform:translate(-50%,-50%)}
+.modal .mh{padding:22px 24px 4px}
+.modal .mh h3{font-size:18px}
+.modal .mh p{margin:4px 0 0;color:var(--g500);font-size:13.5px}
+.modal .mb{padding:12px 24px}
+.modal .mf{padding:14px 24px 20px;display:flex;justify-content:flex-end;gap:10px}
+.toasts{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:calc(16px + env(safe-area-inset-right,0px));z-index:90;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:12px;font-weight:600;font-size:13.5px;box-shadow:var(--sh-pop);animation:slin .35s var(--ease);background:var(--ok);color:#fff;max-width:min(420px,calc(100vw - 32px))}
+.toast.info{background:var(--ink)}
+.toast.out{animation:slout .3s var(--ease) forwards}
+@keyframes slin{from{transform:translateX(120%)}to{transform:none}}
+@keyframes slout{to{transform:translateX(120%);opacity:0}}
+.tpl{border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}
+.tpl pre{margin:0;max-height:110px;overflow:hidden;font-family:var(--mono);font-size:11.5px;color:var(--g600);white-space:pre-wrap;background:var(--g50);border-radius:8px;padding:8px}
+.proto{font-size:12px;color:var(--g500);display:flex;align-items:center;gap:6px;margin-bottom:12px}
+.proto b{color:var(--v-dark)}
+/* answer-the-questions panel (brought back from v30) */
+.qd-scrim{position:fixed;inset:0;z-index:55;background:rgba(13,13,17,.42);opacity:0;transition:opacity .25s}
+.qd-scrim.in{opacity:1}
+.qd{position:fixed;top:0;right:0;bottom:0;z-index:56;width:min(860px,100vw);background:#fff;display:flex;flex-direction:column;box-shadow:var(--sh-pop);transform:translateX(100%);transition:transform .32s var(--ease);border-radius:20px 0 0 20px;overflow:hidden}
+.qd.in{transform:none}
+.qd::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:var(--v)}
+.qd-h{padding:22px 24px 16px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:flex-start}
+.qd-h .tile{width:42px;height:42px;border-radius:12px;border:0;color:#fff;background:var(--v)}
+.qd-h h2{margin:0;font-size:19px;color:var(--ink);line-height:1.3}
+.qd-h p{margin:2px 0 0;color:var(--g500);font-size:13.5px}
+.qd-prog{height:4px;background:var(--g100);border-radius:4px;margin-top:12px;overflow:hidden}
+.qd-prog i{display:block;height:100%;width:0;background:var(--v);border-radius:4px;transition:width .3s var(--ease)}
+.qd-b{flex:1;overflow-y:auto;padding:4px 24px 24px}
+.qd-q{padding:22px 0;border-bottom:1px solid var(--line)}
+.qd-q:last-child{border-bottom:0}
+.qd-qh{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px}
+.qd-n{width:26px;height:26px;border-radius:50%;background:var(--v-50);color:var(--v-dark);font-weight:700;font-size:13px;display:grid;place-items:center;flex:0 0 auto;transition:all .2s}
+.qd-n.done{background:var(--ok-bg);color:var(--ok)}
+.qd-qh h3{margin:2px 0 0;font-size:15.5px;color:var(--ink)}
+.qd-qh p{margin:2px 0 0;color:var(--g500);font-size:13px}
+.qd-qb{padding-left:38px;display:flex;flex-direction:column;gap:12px}
+@media (max-width:560px){.qd-qb{padding-left:0}}
+.qd-g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:560px){.qd-g2{grid-template-columns:1fr}}
+.qd-chips{display:flex;flex-wrap:wrap;gap:8px}
+.qd-chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:999px;border:1px solid var(--g200);background:#fff;color:var(--g700);font-weight:500;font-size:13.5px;transition:all .15s}
+.qd-chip:hover{border-color:var(--v-200);color:var(--ink)}
+.qd-chip[aria-pressed="true"]{background:var(--v-50);border-color:var(--v);color:var(--v-dark)}
+.qd-chip .ck{display:none}
+.qd-chip[aria-pressed="true"] .ck{display:inline-grid}
+.qd-chip .sdot{width:6px;height:6px;border-radius:50%;background:var(--v);display:inline-block}
+.qd-chip.static{cursor:default}
+.qd-task{border:1px solid var(--line);border-radius:12px;overflow:hidden;animation:qdpop .25s var(--ease)}
+@keyframes qdpop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.qd-taskh{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--g50);border-bottom:1px solid var(--line)}
+.qd-taskh b{color:var(--ink);font-size:13.5px}
+.qd-taskb{padding:14px;display:flex;flex-direction:column;gap:14px}
+.qd-fl{display:flex;flex-direction:column;gap:6px;min-width:0}
+.qd-fl .top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qd-fl .top b{font-size:13.5px;color:var(--ink);font-weight:600}
+.qd-var{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11.5px;color:var(--v-dark);background:var(--v-50);border:1px solid var(--v-100);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.qd-tg{display:flex;align-items:flex-start;gap:12px;cursor:pointer}
+.qd-tg .grow b{display:block;font-size:13.5px;color:var(--ink);font-weight:600}
+.qd-tg .grow span{font-size:12.5px;color:var(--g500)}
+.qd-docs{display:flex;flex-direction:column;gap:6px}
+.qd-doc{display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--g200);border-radius:10px;cursor:pointer;font-size:13.5px}
+.qd-doc small{color:var(--g500)}
+.qd-prev{padding:12px 14px;border-radius:12px;background:var(--g50);border:1px solid var(--line);font-size:13.5px;color:var(--g700)}
+.qd-prev small{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--g400);margin-bottom:4px}
+.qd-ai{border:1px solid var(--v-200);border-radius:12px;background:linear-gradient(180deg,#FBFAFF,#fff);padding:14px;display:flex;flex-direction:column;gap:12px}
+.qd-vr{display:grid;grid-template-columns:150px minmax(0,1.5fr) minmax(0,1fr) 34px;gap:8px;align-items:center}
+@media (max-width:620px){.qd-vr{grid-template-columns:1fr}}
+.qd-vr input{padding:8px 10px;font-size:13px}
+.qd-vr input.mono{font-family:ui-monospace,'SF Mono',Menlo,monospace}
+.qd-f{padding:14px 24px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px;background:#fff}
+.qd-writing{position:absolute;inset:0;background:rgba(255,255,255,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:5;padding:24px;text-align:center}
+.qd-writing ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;text-align:left}
+.qd-writing li{display:flex;gap:10px;align-items:center;color:var(--g400);font-weight:500;transition:color .2s}
+.qd-writing li.on{color:var(--ink)}
+.qd-writing li .ico{width:22px;height:22px;border-radius:50%;background:var(--g100)}
+.qd-writing li.on .ico{background:var(--ok-bg);color:var(--ok)}
+.qd-ring{width:36px;height:36px;border-radius:50%;border:3px solid var(--v-100);border-top-color:var(--v);animation:qdspin .8s linear infinite}
+@keyframes qdspin{to{transform:rotate(360deg)}}
+.diy-nudge{display:flex;gap:14px;align-items:center;padding:14px 16px;border-radius:14px;background:var(--v-50);border:1px dashed var(--v-200)}
+.diy-nudge .tile{width:40px;height:40px;border-radius:12px;background:#fff;color:var(--v)}
+.diy-nudge b{display:block;color:var(--ink);font-size:14.5px}
+.diy-nudge span{font-size:13.5px;color:var(--g600)}
+.diy-done{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:var(--ok-bg);border:1px solid var(--ok-line);color:var(--ok);font-size:13.5px;font-weight:500}
+.diy-done .grow{color:var(--g700)}
+.filled .fr{padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;display:flex;flex-direction:column;gap:3px}
+.filled .fr:last-child{border-bottom:0}
+.filled .fr span:last-child{color:var(--ink);overflow-wrap:anywhere}
+.mcode{font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:12px;line-height:1.65;background:#1F1D2B;color:#E6E3F5;border-radius:12px;padding:16px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
+.mcode .pv{color:#FFB86B}
+.qd .inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.qd .help{font-size:12.5px}
+.diy-nudge{margin-bottom:16px}.diy-done{margin-bottom:16px}
+.railbox.filled{margin-top:14px;background:var(--white)}
+/* v33: full-page test */
+.wrap.full{max-width:none}
+.testfull{display:flex;flex-direction:column;gap:14px}
+.ckbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ckh{color:var(--ink);font-size:14px;margin-right:4px}
+.ckp{display:inline-flex;align-items:center;gap:7px;padding:5px 12px 5px 6px;border:1px solid var(--ok-line);background:var(--ok-bg);border-radius:999px;font-size:13px;max-width:100%}
+.ckp .ci{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--white);color:var(--ok);flex:0 0 auto}
+.ckp b{color:var(--ink);font-weight:600;white-space:nowrap}
+.ckp .d{color:var(--g600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ckp.w{border-color:var(--warn-line);background:var(--warn-bg)}.ckp.w .ci{color:var(--warn)}
+.window.big{height:calc(100vh - 292px);min-height:440px;max-height:none;border-radius:20px}
+.window.big .bothead{padding:16px 22px}.window.big .bothead b{font-size:18px}.window.big .bothead small{font-size:14px}.window.big .bothead .bav{width:44px;height:44px}
+.window.big .msgs{padding:26px 30px;gap:14px}
+.window.big .m{font-size:17px;line-height:1.6;padding:13px 18px;max-width:min(72%,760px);border-radius:18px}
+.window.big .tc span{font-size:12.5px;padding:3px 9px}
+.window.big .slotcard{padding:16px}.window.big .slotcard b{font-size:16.5px}.window.big .slotcard small{font-size:14px}
+.window.big .slots button{font-size:15px;padding:9px 14px}
+.window.big .qr{padding:0 30px 14px;gap:8px}.window.big .qr button{font-size:15.5px;padding:10px 16px}
+.window.big .cin{padding:14px 22px}.window.big .cin input{font-size:17px}.window.big .cin .ib{width:44px;height:44px}
+.window.big .pow{font-size:12.5px;padding-bottom:10px}
+.window.big .typing{padding:14px 18px}.window.big .typing i{width:8px;height:8px}
+.drawer.full{width:100vw}
+.drawer.full .window.big{height:auto;flex:1;min-height:0;border-radius:0}
+.subh{font-size:16px;margin:0 0 12px}
+.subh.next{margin-top:28px}
+.tplc{display:flex;flex-direction:column;gap:10px;text-align:left;padding:16px;border:1px solid var(--line);border-radius:14px;background:var(--white);transition:border-color .15s,box-shadow .2s}
+.tplc:hover{border-color:var(--v-200);box-shadow:0 0 0 3px var(--v-50)}
+.tplc .top{display:flex;align-items:center;gap:12px}
+.tplc .top b{color:var(--ink);font-size:15px}
+.tplc .for{font-size:12.5px;color:var(--g500)}
+.tplc p{margin:0;color:var(--g700);font-size:13.5px}
+.tplc ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.tplc li{font-size:12.5px;color:var(--v-dark);background:var(--v-50);border:1px solid var(--v-100);border-radius:999px;padding:3px 10px}
+.tplc .go{font-size:13px;font-weight:600;color:var(--v-dark);display:inline-flex;align-items:center;gap:6px}
+.tpld pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.65;color:var(--g700);white-space:pre-wrap;background:var(--g50);border:1px solid var(--line);border-radius:12px;padding:14px;max-height:46vh;overflow:auto}
+</style>
+
+<div id="app"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* ===================== helpers ===================== */
+const $=(s,r)=>(r||document).querySelector(s);
+const $$=(s,r)=>[...(r||document).querySelectorAll(s)];
+function h(tag,props,...kids){
+  const el=document.createElement(tag);let val;
+  if(props)for(const k in props){const v=props[k];if(v==null||v===false)continue;
+    if(k==='class')el.className=v;else if(k==='text')el.textContent=v;else if(k==='html')el.innerHTML=v;else if(k==='value')val=v;
+    else if(k==='checked'||k==='disabled'||k==='selected')el[k]=!!v;
+    else if(k.slice(0,2)==='on'&&typeof v==='function')el.addEventListener(k.slice(2),v);else el.setAttribute(k,v===true?'':v)}
+  kids.flat(Infinity).forEach(c=>{if(c==null||c===false)return;el.append(c instanceof Node?c:document.createTextNode(String(c)))});
+  if(val!==undefined)el.value=val;return el;
+}
+const P={
+ home:'M3 10.5 12 3l9 7.5M5 9.5V21h14V9.5',bot:'M12 3v3M7 6h10a3 3 0 0 1 3 3v7a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3ZM9 12h.01M15 12h.01M9 16h6',
+ arrowR:'M5 12h14M13 6l6 6-6 6',arrowL:'M19 12H5M11 6l-6 6 6 6',check:'M5 12.5l4.5 4.5L19 7',plus:'M12 5v14M5 12h14',x:'M18 6 6 18M6 6l12 12',
+ spark:'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z',wand:'M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M3 21l9-9M12.2 6.2 11 5',
+ sliders:'M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M14 4v4M8 10v4M16 16v4',
+ wrench:'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8Z',
+ book:'M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15ZM4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5A2.5 2.5 0 0 1 4 20.5Z',
+ table:'M3 5h18v14H3zM3 10h18M3 15h18M9 5v14',puzzle:'M10 4a2 2 0 1 1 4 0v2h4v4h-2a2 2 0 1 0 0 4h2v4h-4v-2a2 2 0 1 0-4 0v2H6v-4h2a2 2 0 1 0 0-4H6V6h4V4Z',
+ doc:'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5ZM14 3v5h5M9 13h6M9 17h4',chip:'M9 3v2M15 3v2M9 19v2M15 19v2M3 9h2M3 15h2M19 9h2M19 15h2M6 6h12v12H6zM10 10h4v4h-4z',
+ user:'M20 21v-1a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v1M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z',users:'M17 21v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9.5 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM22 21v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8',
+ steth:'M6 3v6a5 5 0 0 0 10 0V3M6 3H4M16 3h2M11 14v2a5 5 0 0 0 10 0v-2M21 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
+ cal:'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',shield:'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3ZM9 12l2 2 4-4',flask:'M9 3h6M10 3v6L4.5 18.5A1.6 1.6 0 0 0 6 21h12a1.6 1.6 0 0 0 1.5-2.5L14 9V3M7 15h10',
+ userplus:'M15 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M8.5 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM19 8v6M16 11h6',pill:'M4.5 12.5l8-8a4.95 4.95 0 0 1 7 7l-8 8a4.95 4.95 0 0 1-7-7ZM8.5 8.5l7 7',
+ calc:'M6 3h12v18H6zM9 7h6M9 12h.01M12 12h.01M15 12h.01M9 16h.01M12 16h.01M15 16h.01',info:'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18ZM12 11v5M12 8h.01',
+ clip:'M9 3h6v3H9zM8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 14l2 2 4-4',bell:'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0',
+ chat:'M21 12a8 8 0 0 1-11.8 7L3 21l2-6.2A8 8 0 1 1 21 12Z',phone:'M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z',
+ send:'M5 12h14M13 6l6 6-6 6',mic:'M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3ZM5 11a7 7 0 0 0 14 0M12 18v3',paper:'m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 1 1 5.7 5.7l-8.6 8.6a2 2 0 0 1-2.8-2.8l8.5-8.5',
+ play:'M7 4v16l13-8L7 4Z',upload:'M12 16V4M7 9l5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2',refresh:'M21 12a9 9 0 1 1-2.6-6.4M21 4v5h-5',
+ alert:'M12 9v4M12 17h.01M10.3 3.9 2 18a2 2 0 0 0 1.7 3h16.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z',heart:'M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z',
+ server:'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',trash:'M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14',search:'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM21 21l-4.3-4.3',
+ dots:'M5 12h.01M12 12h.01M19 12h.01',copy:'M9 9h11v11H9zM5 15H4V4h11v1',hash:'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18',history:'M3 12a9 9 0 1 0 2.64-6.36L3 8M3 3v5h5M12 7v5l3 2',
+ palette:'M12 3a9 9 0 1 0 0 18c1.1 0 2-.9 2-2 0-.5-.2-1-.6-1.4-.3-.3-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.2-4-7.6-9-7.6ZM7.5 11.5h.01M10.5 7.5h.01M15 7.5h.01',
+ lock:'M6 11V8a6 6 0 0 1 12 0v3M5 11h14v10H5zM12 15v2',star:'M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.5Z',
+ widget:'M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4V5Z',box:'M3 8.5 12 4l9 4.5-9 4.5-9-4.5ZM3 13l9 4.5 9-4.5M3 17.5 12 22l9-4.5',
+ grid:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',layers:'M3 8.5 12 4l9 4.5-9 4.5-9-4.5ZM3 13l9 4.5 9-4.5',link:'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7',
+ chart:'M3 3v18h18M7 15l4-4 3 3 5-6',key:'M15.5 7.5a3.5 3.5 0 1 1-3.4 4.3L3 21v-3l1-1h2v-2h2l2.2-2.2a3.5 3.5 0 0 1 5.3-5.3Z',headset:'M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v6H5a1 1 0 0 1-1-1v-5ZM20 14h-3v6h2a1 1 0 0 0 1-1v-5Z'
+};
+const ic=(n,s,w)=>'<svg width="'+(s||16)+'" height="'+(s||16)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="'+(w||1.9)+'" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="'+P[n]+'"/></svg>';
+const I=(n,s,w)=>h('span',{class:'ico',html:ic(n,s,w)});
+const clone=o=>JSON.parse(JSON.stringify(o));
+const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const list=a=>a.length<2?a.join(''):a.slice(0,-1).join(', ')+' and '+a[a.length-1];
+const today=()=>new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+const nowTime=()=>new Date().toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).toLowerCase();
+const TINT={g:['#ECFDF3','#067647'],b:['#EFF8FF','#175CD3'],y:['#FFFAEB','#B54708'],r:['#FEF3F2','#B42318'],v:['#F1EFFC','#5042BD'],n:['#F1F0F4','#535256']};
+const tile=(icon,t)=>h('span',{class:'tile',style:'background:'+TINT[t][0]+';color:'+TINT[t][1],html:ic(icon,16)});
+function toast(msg,kind){const t=h('div',{class:'toast'+(kind?' '+kind:''),role:'status'},I(kind==='info'?'spark':'check',16,2.4),msg);$('#toasts').append(t);setTimeout(()=>{t.classList.add('out');setTimeout(()=>t.remove(),320)},3200)}
+const WS_ID='7179179044264299';
+const uuid=()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&3|8)).toString(16)});
+const makeUid=()=>btoa(uuid()+'#'+WS_ID);
+function copyText(t,msg){const done=()=>toast(msg||'Copied');try{navigator.clipboard.writeText(t).then(done,()=>fallback())}catch(e){fallback()}
+  function fallback(){const i=h('textarea',{style:'position:fixed;opacity:0'});i.value=t;document.body.append(i);i.select();try{document.execCommand('copy');done()}catch(e){toast('Select the ID and copy it','info')}i.remove()}}
+
+/* ===================== Eka reference data ===================== */
+const SERVERS=[
+ {id:'emr',name:'Eka EMR MCP',sub:'Patients, appointments, records and ABHA',tools:['search_patients','get_comprehensive_patient_profile','add_patient','list_patients','update_patient','archive_patient','get_patient_by_mobile','authentication_elicitation','get_appointment_slots','get_available_dates','book_appointment','show_appointments_enriched','show_appointments_basic','get_appointment_details_enriched','get_appointment_details_basic','get_patient_appointments_enriched','get_patient_appointments_basic','update_appointment','complete_appointment','cancel_appointment','reschedule_appointment','get_business_entities','get_doctor_profile_basic','get_clinic_details_basic','get_doctor_services','get_comprehensive_doctor_profile','get_comprehensive_clinic_profile','doctor_availability_elicitation','get_prescription_details_basic','get_comprehensive_prescription_details','list_patient_records','get_patient_record','upload_patient_record','abha_send_otp','abha_verify_otp','abha_select_profile']},
+ {id:'cg',name:'Clinical Guidelines by eka.care',sub:'Indian drugs, treatment protocols and calculators',tools:['indian_branded_drug_search','indian_treatment_protocol_search','indian_pharmacology_details','medical_calculator_list','medical_calculator_input','medical_calculator_output']},
+ {id:'ps',name:'Parallel Search MCP',sub:'Web search and page reading',tools:['web_search_preview','web_fetch']}
+];
+const TDESC={search_patients:'Find a patient by name or mobile',get_comprehensive_patient_profile:'Patient profile with visit history',add_patient:'Register a new patient',list_patients:'Browse all patients',update_patient:'Edit a patient profile',archive_patient:'Archive a patient',get_patient_by_mobile:'Find a patient by mobile number',authentication_elicitation:'Verify the patient with an OTP',get_appointment_slots:'Free slots for a doctor',get_available_dates:'Dates with free slots',book_appointment:'Book a slot',show_appointments_enriched:'List appointments',show_appointments_basic:'Raw appointment list',get_appointment_details_enriched:'One appointment, full detail',get_appointment_details_basic:'One appointment, IDs only',get_patient_appointments_enriched:'A patient’s appointments',get_patient_appointments_basic:'A patient’s appointments, IDs only',update_appointment:'Change an appointment',complete_appointment:'Mark a visit completed',cancel_appointment:'Cancel an appointment',reschedule_appointment:'Move an appointment',get_business_entities:'Doctors and clinics in your workspace',get_doctor_profile_basic:'Doctor profile',get_clinic_details_basic:'Clinic address and facilities',get_doctor_services:'A doctor’s services',get_comprehensive_doctor_profile:'Doctor with clinics and services',get_comprehensive_clinic_profile:'Clinic with doctors and services',doctor_availability_elicitation:'Slot picker shown in chat',get_prescription_details_basic:'Prescription data',get_comprehensive_prescription_details:'Prescription with doctor and clinic',list_patient_records:'List a patient’s records',get_patient_record:'Open a record',upload_patient_record:'Save a report to the vault',abha_send_otp:'ABHA login: send OTP',abha_verify_otp:'ABHA login: verify OTP',abha_select_profile:'ABHA login: pick a profile',indian_branded_drug_search:'Indian brands and generics',indian_treatment_protocol_search:'ICMR, RSSDI, ADA and other protocols',indian_pharmacology_details:'National Formulary of India',medical_calculator_list:'Find a calculator',medical_calculator_input:'Inputs a calculator needs',medical_calculator_output:'Run the calculator',web_search_preview:'Search the web',web_fetch:'Read a web page'};
+const KB=[
+ {id:'faq',name:'Clinic FAQs.pdf',d:'Timings, parking, what to bring · 6 pages',kind:'file'},
+ {id:'postop',name:'Post-procedure care.pdf',d:'Instructions patients ask for after a visit · 4 pages',kind:'file'},
+ {id:'htn',name:'Hypertension protocol (clinic).docx',d:'Your clinic’s BP targets and first-line drugs · 3 pages',kind:'file'},
+ {id:'src-doc',name:'Eka · Doctors',d:'Profiles of doctors in your workspace',kind:'eka'},
+ {id:'src-svc',name:'Eka · Services',d:'Services and procedures you offer',kind:'eka'}
+];
+const DATASETS=[
+ {id:'roster',name:'Doctor roster & OPD timings',d:'CSV · 4 doctors · updated weekly',cols:['Doctor','Speciality','Days','OPD hours'],rows:[['Dr. Ananya Rao','Cardiology','Mon, Wed, Fri','10:00–14:00'],['Dr. Vikram Shah','General Physician','Mon–Sat','09:00–13:00'],['Dr. Meera Iyer','Paediatrics','Tue, Thu, Sat','16:00–20:00'],['Dr. Arjun Nair','Orthopaedics','Mon, Thu','11:00–15:00']]},
+ {id:'fees',name:'Consultation fees',d:'CSV · 4 rows',cols:['Visit type','Fee'],rows:[['New consultation','₹700'],['Follow-up within 7 days','Free'],['Follow-up after 7 days','₹400'],['Tele-consult','₹500']]},
+ {id:'labs',name:'Lab test price list',d:'XLSX · 42 tests',cols:['Test','Price','Fasting'],rows:[['CBC','₹350','No'],['HbA1c','₹550','No'],['Lipid profile','₹700','Yes, 10–12 h'],['Thyroid profile','₹600','No']]},
+ {id:'tpa',name:'Insurance & TPA panel',d:'CSV · 11 insurers',cols:['Insurer','Cashless'],rows:[['Star Health','Yes'],['HDFC ERGO','Yes'],['Niva Bupa','Yes'],['ICICI Lombard','Reimbursement only']]}
+];
+const SKILLS=[
+ {id:'intake',name:'Pre-visit intake',d:'Asks the complaint, duration, medicines and allergies, then sends a 4-line summary to the doctor.',t:'b',icon:'clip'},
+ {id:'triage',name:'Red-flag triage',d:'Spots emergency symptoms and stops the chat with a 108 message.',t:'r',icon:'alert'},
+ {id:'followup',name:'Follow-up reminders',d:'Reminds patients about follow-up visits on WhatsApp.',t:'y',icon:'bell'},
+ {id:'labx',name:'Lab report explainer',d:'Explains a report in plain words without diagnosing.',t:'g',icon:'flask'},
+ {id:'rxsum',name:'Prescription summariser',d:'Turns a prescription into a simple dosing timetable.',t:'v',icon:'pill'}
+];
+const MODELS=[['Anthropic',['Claude 5.5 Haiku','Claude 5 Sonnet','Claude 5 Opus']],['OpenAI',['GPT-4.1 mini','OpenAI GPT 5.6 Luna']],['Google Gemini',['Gemini 2.5 Flash']]];
+const OPT={model:'Claude 5.5 Haiku',temp:.2,maxTok:2048,itr:8};
+const PRESETS=[
+ {key:'fast',label:'Fast',d:'Quick and inexpensive — right for FAQs and simple bookings',vals:{model:'Claude 5.5 Haiku',temp:.2,maxTok:2048,itr:8}},
+ {key:'balanced',label:'Balanced',d:'A step up for longer, more careful conversations',vals:{model:'Claude 5 Sonnet',temp:.4,maxTok:3072,itr:10}},
+ {key:'powerful',label:'Powerful',d:'Strongest reasoning — for clinical lookups and complex flows',vals:{model:'Claude 5 Opus',temp:.5,maxTok:4096,itr:12}}
+];
+const LANGS=['English','Hindi','Hinglish','Marathi','Tamil','Telugu','Kannada','Bengali','Gujarati'];
+const SPECS=['General Medicine','Cardiology','Paediatrics','Obstetrics & Gynaecology','Orthopaedics','Dermatology','Diabetology','ENT','Multi-speciality'];
+const INPUTS=[['text','Text'],['file','File'],['audio','Audio (STT)'],['voice','Voice']];
+const AUD={patients:{label:'Patients & families',d:'Booking, reports, questions before a visit',icon:'users',t:'g',text:'patients and their families'},
+  staff:{label:'My front-desk team',d:'Registration, scheduling and ABHA at the counter',icon:'user',t:'b',text:'front-desk staff at the clinic'},
+  doctors:{label:'Me and other doctors',d:'Drug, guideline and calculator lookups during OPD',icon:'steth',t:'y',text:'doctors at the clinic'}};
+const PERSONA={
+ warm:{label:'Warm receptionist',role:'front-desk assistant',d:'Friendly, quick, never clinical',t:'g',icon:'heart',rule:'Warm, friendly and quick. Short sentences and everyday words. Use the person’s first name once you know it.',line:'Namaste! I’m {n} from {c}. Would you like to book a visit or ask something?'},
+ caring:{label:'Caring nurse',role:'care coordinator',d:'Patient, gentle, explains each step',t:'b',icon:'users',rule:'Gentle and patient. Acknowledge how the person feels, explain one step at a time, and check they are comfortable before moving on.',line:'I’m sorry you’re not feeling well. I’m {n}, and I’ll help you see a doctor soon.'},
+ clinical:{label:'Clinical assistant',role:'clinical assistant',d:'Precise, cites sources, for doctors',t:'y',icon:'steth',rule:'Precise and brief. Use standard medical terms, lead with the answer, and name the guideline or source you used.',line:'Hello doctor, I’m {n}. Ask me about a drug, a guideline or a score.'}
+};
+const FEATURES=[
+ {id:'book',label:'Book & manage appointments',short:'Appointments',d:'Shows free slots, books, reschedules and cancels',icon:'cal',t:'g',aud:['patients','staff'],
+  tools:{emr:['get_business_entities','doctor_availability_elicitation','get_available_dates','get_appointment_slots','book_appointment','get_patient_by_mobile','add_patient','reschedule_appointment','cancel_appointment','get_patient_appointments_enriched']},data:['roster'],
+  block:'### Appointments\n- Offer only doctors from the roster and only free slots from get_available_dates. Never guess a slot.\n- Find the patient with get_patient_by_mobile. If they are new, collect name, date of birth and gender and register them.\n- Read the doctor, date and time back and wait for a yes before you call book_appointment.\n- Patients may reschedule or cancel after confirming.'},
+ {id:'faq',label:'Answer clinic questions',short:'Clinic FAQs',d:'Timings, fees, address, what to bring',icon:'info',t:'b',aud:['patients','staff'],tools:{emr:['get_clinic_details_basic','get_doctor_services']},kb:['faq'],data:['fees','tpa'],
+  block:'### Clinic questions\n- Answer timings, fees, insurance and directions only from the Clinic FAQs, Consultation fees and Insurance panel. If it is not there, say so and share the front-desk number.'},
+ {id:'abha',label:'Create & link ABHA',short:'ABHA',d:'ABHA via mobile OTP, share the card',icon:'shield',t:'y',aud:['patients','staff'],tools:{emr:['abha_send_otp','abha_verify_otp','abha_select_profile']},
+  block:'### ABHA\n- Use the mobile-OTP flow: abha_send_otp, abha_verify_otp, then abha_select_profile if more than one profile comes back.\n- Never ask for an Aadhaar number and never repeat an OTP back.'},
+ {id:'records',label:'Share reports & prescriptions',short:'Reports',d:'Verified patients get their lab reports and Rx',icon:'flask',t:'r',aud:['patients','doctors'],tools:{emr:['authentication_elicitation','get_patient_by_mobile','list_patient_records','get_patient_record','get_comprehensive_prescription_details']},skills:['labx'],
+  block:'### Reports and prescriptions\n- Verify the patient with an OTP before showing any record.\n- Explain reports in plain words with the Lab report explainer skill. Never diagnose from a report.'},
+ {id:'register',label:'Register new patients',short:'Registration',d:'Creates the patient profile in Eka EMR',icon:'userplus',t:'n',aud:['staff'],tools:{emr:['search_patients','get_patient_by_mobile','add_patient','update_patient']},
+  block:'### Registration\n- Check for an existing profile first. Always collect full name, date of birth, gender and mobile number, then create the profile with add_patient.'},
+ {id:'intake',label:'Pre-visit intake',short:'Intake',d:'Collects symptoms and history before the consult',icon:'clip',t:'b',aud:['patients'],skills:['intake','triage'],
+  block:'### Pre-visit intake\n- Before the visit, run the Pre-visit intake skill: main complaint, duration, current medicines, allergies. Do not interpret the answers.'},
+ {id:'followup',label:'Follow-up reminders',short:'Follow-ups',d:'Nudges patients when a follow-up is due',icon:'bell',t:'y',aud:['patients'],tools:{emr:['show_appointments_enriched']},skills:['followup'],
+  block:'### Follow-ups\n- When a follow-up is due, remind the patient once and offer to book it.'},
+ {id:'medicine',label:'Medicine lookup',short:'Medicines',d:'Indian brands, generics, doses, interactions',icon:'pill',t:'g',aud:['doctors'],tools:{cg:['indian_branded_drug_search','indian_pharmacology_details']},
+  block:'### Medicines\n- Look up drugs with indian_branded_drug_search and indian_pharmacology_details. Answer only from what the tools return; give the brand name the doctor used.'},
+ {id:'guidelines',label:'Treatment guidelines',short:'Guidelines',d:'ICMR, RSSDI, ADA and your own protocols',icon:'book',t:'b',aud:['doctors'],tools:{cg:['indian_treatment_protocol_search']},kb:['htn'],
+  block:'### Guidelines\n- Ground clinical answers in indian_treatment_protocol_search and the clinic’s own protocol. Name the guideline body and year.'},
+ {id:'calc',label:'Medical calculators',short:'Calculators',d:'BMI, eGFR, CHA₂DS₂-VASc and more',icon:'calc',t:'n',aud:['doctors'],tools:{cg:['medical_calculator_list','medical_calculator_input','medical_calculator_output']},
+  block:'### Calculators\n- Use the medical calculator tools in order (list, input, output). Never work out a score yourself; ask for missing values.'}
+];
+const FEAT=Object.fromEntries(FEATURES.map(f=>[f.id,f]));
+const TEMPLATES=[
+ {name:'Front-desk assistant',icon:'users',t:'g',who:'For patients and families contacting your clinic',
+  purpose:'Handles the everyday questions your reception gets on calls and WhatsApp, so staff stop repeating the same answers.',
+  helps:['Book, move or cancel visits','Timings, address and directions','What to bring to a visit','Sends urgent cases to 108'],
+  body:'## Who you help\nPatients contacting {{clinic_name}} about visits.\n\n## You can help with\n- Booking, moving or cancelling an appointment\n- Clinic timings, address and directions\n- What to bring to a visit\n\n## You never do\n- Give medical advice, a diagnosis or a dose\n- Discuss anyone else’s records\n\nIf a message sounds urgent, say: please call 108 now, or go to the nearest emergency department.'},
+ {name:'Clinical reference assistant',icon:'steth',t:'y',who:'For you and other doctors, during OPD',
+  purpose:'A quick lookup between patients. It answers first, then gives the detail, and says what to double-check.',
+  helps:['Doses, brands and generics','Comparing options in a table','What to verify before prescribing'],
+  body:'## Who you help\nDoctors practising in India, during consultations. Be brief.\n\n## How to answer\n- Lead with the answer, then the supporting detail.\n- Generic names first, brands second.\n- Use a table when comparing doses.\n\n## Never\n- Invent a guideline, a brand or a dose. If unsure, say what to verify.'},
+ {name:'Report explainer',icon:'flask',t:'b',who:'For patients who have just received a lab report',
+  purpose:'Explains a lab report in plain words, so patients arrive at the follow-up already understanding their results.',
+  helps:['What each test checks','Values outside the usual range','Questions to ask the doctor next'],
+  body:'## Task\nExplain the attached report to the patient in plain language.\n\n## Structure\n1. What the test looks at, in one line\n2. Which values are outside the usual range\n3. What that commonly means, without diagnosing\n4. What to ask the doctor next\n\nEnd with: please go through this with {{doctor_name}}.'}
+];
+
+/* ===================== agent model ===================== */
+const blankAppearance=()=>({agentIcon:'bot',assistantIcon:'headset',titleImage:'',bg:'soft',textMode:'light',accent:'#6B5CE0',nudge:'#2a88a7',darkHeader:true});
+function blankAgent(path){return{id:'a'+Date.now(),uid:null,path:path,status:'Draft',version:0,history:[],created:null,updated:today(),
+  name:'',clinic:'',spec:'General Medicine',aud:'patients',persona:'warm',langs:['English','Hindi'],channels:['Website chat','WhatsApp'],
+  features:[],notes:'',greeting:'',quickReplies:[],inputs:{text:true,file:true,audio:true,voice:false},idle:30,
+  prompt:'',promptEdited:false,sysPrompt:'',sysOn:false,vars:['patient_name'],
+  tools:{},kb:[],data:[],skills:[],model:'Claude 5.5 Haiku',temp:.2,maxTok:2048,itr:8,apiKey:'',
+  feedback:{on:true,type:'rating',title:'Please rate our session'},byoa:'none',appearance:blankAppearance(),wsConnected:false}}
+function featureTools(fs){const tools={};fs.forEach(fid=>Object.entries(FEAT[fid].tools||{}).forEach(([s,ts])=>ts.forEach(t=>{tools[s+':'+t]=tools[s+':'+t]||fid})));return tools}
+/* Turning a capability on both adds it to the prompt (via applyGuided) and switches on the
+   tools it needs — one action instead of two. Turning it off only removes it from the prompt;
+   the tool stays available to toggle off by hand under Advanced, so nothing breaks silently. */
+function toggleFeature(a,fid,on){
+  a.features=on?[...new Set(a.features.concat(fid))]:a.features.filter(x=>x!==fid);
+  if(on)a.tools=Object.assign({},a.tools,featureTools([fid]));
+  applyGuided(a,true);
+}
+function guidedConfig(a){
+  const kb=new Set(),data=new Set(),skills=new Set(['triage']);
+  a.features.forEach(fid=>{const f=FEAT[fid];(f.kb||[]).forEach(x=>kb.add(x));(f.data||[]).forEach(x=>data.add(x));(f.skills||[]).forEach(x=>skills.add(x))});
+  if(a.aud==='doctors')skills.delete('triage');
+  return{kb:[...kb],data:[...data],skills:[...skills]};
+}
+function guidedPrompt(a){
+  const p=PERSONA[a.persona],nm=a.name.trim()||'the assistant',cl=a.clinic.trim()||'the clinic';
+  const notes=a.notes.split('\n').map(x=>x.trim()).filter(Boolean).map(x=>'- '+x.replace(/^[-•]\s*/,''));
+  return [`You are ${nm}, the ${p.role} at ${cl}, a ${a.spec.toLowerCase()} practice.`,
+   `You talk to ${AUD[a.aud].text}.`,'',
+   '## How you speak',`- ${p.rule}`,'- Always answer in the language the person writes in. Keep medicine names and numbers in English.','',
+   '## What you help with',...(a.features.length?a.features.map(f=>FEAT[f].block):['- Greet people and answer general questions about the clinic.']).join('\n\n').split('\n'),'',
+   '## Rules you always follow',
+   a.aud==='doctors'?'- You support doctors. The clinical decision is always theirs.':'- Never diagnose or prescribe. For medical advice, offer to book a visit.',
+   '- If someone mentions chest pain, trouble breathing, heavy bleeding, fainting or self-harm, tell them to call 108 or go to the nearest emergency room now.',
+   '- Share details only with the verified patient.',
+   '- Never make up doctors, slots, fees or records. If a tool fails, say so.',
+   ...(notes.length?['','## Clinic instructions',...notes]:[]),'',
+   '## When you can’t help','Share the front-desk number and say a person will call back.'].join('\n');
+}
+function applyGuided(a,keepGreeting){
+  const c=guidedConfig(a);
+  a.kb=c.kb;a.data=c.data;a.skills=c.skills;
+  if(!a.promptEdited)a.prompt=guidedPrompt(a);
+  if(!keepGreeting)a.greeting=PERSONA[a.persona].line.replace('{n}',a.name.trim()||'Asha').replace('{c}',a.clinic.trim()||'Sunrise Clinic');
+  if(!a.qrTouched)a.quickReplies=a.features.slice(0,3).map(f=>({book:'Book an appointment',faq:'Clinic timings',abha:'Create my ABHA',records:'My lab report',register:'Register',intake:'I have symptoms',followup:'My follow-up',medicine:'Check a dose',guidelines:'Find a guideline',calc:'Calculate a score'})[f]);
+}
+const toolCount=a=>Object.keys(a.tools).length;
+const serverCount=a=>new Set(Object.keys(a.tools).map(k=>k.split(':')[0])).size;
+function featureSet(a){
+  if(a.path==='guided')return a.features.filter(fid=>{const t=FEAT[fid].tools;return !t||Object.entries(t).some(([s,ts])=>ts.some(x=>a.tools[s+':'+x]))});
+  const on=k=>a.tools['emr:'+k]||a.tools['cg:'+k];
+  const f=[];if(on('book_appointment'))f.push('book');if(on('abha_send_otp'))f.push('abha');if(on('list_patient_records'))f.push('records');if(on('add_patient'))f.push('register');
+  if(on('indian_branded_drug_search'))f.push('medicine');if(on('indian_treatment_protocol_search'))f.push('guidelines');if(on('medical_calculator_output'))f.push('calc');
+  if(a.kb.includes('faq')||a.data.includes('fees'))f.push('faq');if(a.skills.includes('intake'))f.push('intake');
+  return f;
+}
+const ready=a=>!!(a.name.trim()&&a.prompt.trim()&&a.model);
+const hasDraft=a=>a.status==='Live'&&a.history.length&&a.history[a.history.length-1].kind==='draft';
+function snapOf(a){const s=clone(a);['id','uid','status','version','history','created','updated'].forEach(k=>delete s[k]);return s}
+function commit(a,kind,note){
+  if(!a.uid){a.uid=makeUid();a.created=today()}
+  if(kind==='published'){a.version++;a.status='Live'}
+  let dn=0;for(let i=a.history.length-1;i>=0&&a.history[i].kind==='draft';i--)dn++;
+  const snap=snapOf(a),last=a.history[a.history.length-1];
+  if(kind==='draft'&&last&&last.kind==='draft'&&same(last.snap,snap))return;
+  a.history.push({kind,v:a.version,d:kind==='draft'?dn+1:0,date:today(),time:nowTime(),by:'Mohit Prakash',note:note||'',snap});
+  a.updated=today();
+  AGENTS=[a].concat(AGENTS.filter(x=>x.id!==a.id));
+}
+function seedAgents(){
+  const mk=(o,steps)=>{const a=Object.assign(blankAgent(o.path||'guided'),o);if(a.path==='guided'){applyGuided(a);a.tools=featureTools(a.features)}a.uid=makeUid();a.created=steps[0][0];
+    steps.forEach(([date,time,kind,mod],i)=>{const s=snapOf(a);Object.assign(s,clone(mod||{}));if(kind==='published')a.version++;
+      a.history.push({kind,v:a.version,d:kind==='draft'?1:0,date,time,by:'Mohit Prakash',note:'',snap:s})});a.updated=steps[steps.length-1][0];return a};
+  const asha=mk({id:'asha',name:'Asha',clinic:'Sunrise Clinic, Pune',spec:'Multi-speciality',status:'Live',features:['book','faq','abha','records']},
+    [['Oct 6, 2026','10:12 am','published',{features:['book','faq'],model:'Claude 5 Sonnet',temp:.3}],['Oct 9, 2026','4:40 pm','published',{features:['book','faq','abha']}],['Oct 12, 2026','11:05 am','published',{}]]);
+  asha.history[0].snap.tools=Object.fromEntries(Object.entries(asha.tools).filter(([,f])=>f==='book'||f==='faq'));asha.history[0].snap.prompt=asha.prompt.split('### ABHA')[0];
+  asha.history[1].snap.tools=Object.fromEntries(Object.entries(asha.tools).filter(([,f])=>f!=='records'));
+  asha.history[1].snap.prompt=asha.prompt.replace(/### Reports and prescriptions[\s\S]*?(?=\n\n## )/,'').replace(/\n{3,}/g,'\n\n');asha.history[1].snap.skills=['triage'];
+  const maya=mk({id:'maya',name:'Maya',clinic:'Sunrise Clinic, Pune',aud:'doctors',persona:'clinical',langs:['English','Hindi'],channels:['Website chat'],status:'Live',features:['medicine','guidelines','calc'],
+    appearance:Object.assign(blankAppearance(),{accent:'#89b33d'})},[['Oct 13, 2026','4:48 pm','published',{}]]);
+  maya.uid='ZjhjM2ZhOTAtN2I1NS00MWI2LTgxZDgtZWU0OGQ3NjdmYmRiIzcxNzkxNzkwNDQyNjQyOTk=';
+  const rx=mk({id:'rx',path:'custom',name:'Report Desk',clinic:'Sunrise Diagnostics',status:'Draft',prompt:'Help patients understand their lab reports in plain language. Never diagnose. Always suggest discussing results with their doctor.',data:['labs'],skills:['labx'],
+    tools:{'emr:authentication_elicitation':'custom','emr:list_patient_records':'custom','emr:get_patient_record':'custom'}},[['Oct 9, 2026','1:00 pm','draft',{}]]);
+  return [maya,asha,rx];
+}
+let AGENTS=seedAgents();
+const S={view:'agents',step:1,a:null,orig:null,sec:'general',fresh:null,q:'',filter:'all',loaded:null};
+
+/* ===================== shell ===================== */
+const NAV=[[null,[['home','Home'],['bot','Agents',1],['db2','Knowledge'],['grid','Datasets'],['wrench','Tools'],['spark','Skills'],['mic','Voice'],['box','Storage'],['layers','Agent Context'],['link','ABDM Connect']]],
+  ['Monitor',[['chat','Conversations'],['clip','Evaluations'],['chart','Usage']]],['Integrations',[['chat','WhatsApp'],['doc','EMR/HIS']]]];
+P.db2=P.book;
+function rail(){
+  return h('nav',{class:'rail','aria-label':'Console'},
+    h('div',{class:'brand'},h('div',{class:'mark'},'e'),h('div',null,h('b',null,'Eka Console'),h('small',null,'Build health AI agents'))),
+    h('div',{class:'nav'},NAV.map(([t,items])=>[h('h6',null,t||'Build'),items.map(([i,l,on])=>h('button',{class:'ni'+(on?' on':''),onclick:on?()=>leaveTo('agents'):()=>toast(l+' is outside this prototype','info')},I(i,18),h('span',null,l)))])),
+    h('div',{class:'me'},h('div',{class:'pic'},'M'),h('div',null,h('b',null,'Mohit Prakash'),h('small',null,WS_ID))));
+}
+function render(keep){
+  const y=window.scrollY;const app=$('#app');app.innerHTML='';
+  const v=S.view;
+  const main=h('div',{class:'main'},v==='agents'?agentsView():v==='start'?startView():v==='wizard'?wizardView():configView());
+  if(v==='wizard')main.append(wizFoot());
+  if(v==='config')main.append(cfgFoot());
+  app.append(rail(),main);
+  window.scrollTo(0,keep?y:0);
+}
+function go(v){S.view=v;render()}
+const dirty=()=>S.a&&S.orig&&!same(snapOf(S.a),S.orig);
+function leaveTo(v){
+  const a=S.a;
+  if((S.view==='wizard'||S.view==='config')&&a&&a.name.trim()&&dirty()){commit(a,'draft');toast('Your agent has been saved as a draft');S.fresh=a.id}
+  S.loaded=null;S.view=v;render();
+}
+
+/* ===================== agents ===================== */
+let openMenu=null;
+document.addEventListener('click',()=>{if(openMenu){openMenu.remove();openMenu=null}});
+function agentsView(){
+  const q=S.q.trim().toLowerCase(),rows=AGENTS.filter(a=>(S.filter==='all'||a.status===S.filter)&&(!q||a.name.toLowerCase().includes(q)));
+  const live=AGENTS.filter(a=>a.status==='Live').length;
+  return h('main',{class:'wrap'},
+    h('div',{class:'proto'},I('spark',14),h('b',null,'Eka Agent Builder · v33'),'· Doctor-first setup with the full console under Configure. Nothing here saves to Eka.'),
+    h('div',{class:'ph'},h('div',{class:'grow'},h('div',{class:'crumb'},'Home / Agents'),h('h1',null,'Agents'),h('p',null,'Create, manage, and monitor all your AI agents in one place')),
+      h('button',{class:'btn pri',onclick:()=>leaveTo('start')},I('plus',15,2.4),'Create agent')),
+    h('div',{class:'hero in'},h('div',null,h('h2',null,'Now anyone can build an agent'),
+        h('p',null,'Tell Eka who it talks to and what it should help with. Eka writes the instructions, you pick the tools, and you test it before it goes live.'),
+        h('div',{class:'hsteps'},['1 · Details','2 · Intent capture','3 · Test & publish'].map(s=>h('span',null,s)))),
+      h('button',{class:'btn white',onclick:()=>leaveTo('start')},I('wand',15),'Start building')),
+    h('section',{class:'card in',style:'--i:1'},
+      h('div',{class:'tbar'},h('label',{class:'search'},I('search',15),h('input',{class:'inp',placeholder:'Search agents',value:S.q,'aria-label':'Search agents',oninput:e=>{S.q=e.target.value;const p=e.target.selectionStart;render(true);const n=$('.search input');n.focus();n.setSelectionRange(p,p)}})),
+        h('span',{class:'grow'}),h('div',{class:'seg'},[['all','All',AGENTS.length],['Live','Live',live],['Draft','Drafts',AGENTS.length-live]].map(([k,l,n])=>h('button',{'aria-pressed':String(S.filter===k),onclick:()=>{S.filter=k;render(true)}},l+' '+n)))),
+      h('div',{class:'arow head'},h('span',null,'Agent'),h('span',{class:'hs'},'Status'),h('span',{class:'hs'},'Does'),h('span',{class:'hs'},'Last updated'),h('span')),
+      rows.length?rows.map(a=>agentRow(a)):h('div',{style:'padding:40px;text-align:center;color:var(--g500)'},'No agents match.')));
+}
+function agentRow(a){
+  const fs=featureSet(a);
+  const r=h('div',{class:'arow'+(S.fresh===a.id?' fresh':''),tabindex:'0',onclick:()=>openConfig(a),onkeydown:e=>{if(e.key==='Enter')openConfig(a)}},
+    h('div',{class:'row'},h('span',{class:'av'},(a.name||'?').charAt(0)),h('div',{style:'min-width:0'},h('b',null,a.name||'Untitled'),h('small',null,a.clinic||'—'))),
+    h('div',{class:'row hs',style:'flex-wrap:wrap;gap:6px'},h('span',{class:'tag '+(a.status==='Live'?'ok':'dr')},a.status==='Live'?'● Live':'Draft'),a.version?h('span',{class:'tag n'},'v'+a.version):null,hasDraft(a)?h('span',{class:'tag dr'},'Draft changes'):null),
+    h('div',{class:'feats hs'},fs.slice(0,3).map(f=>h('span',{class:'tag v'},FEAT[f].short)),fs.length>3?h('span',{class:'tag n'},'+'+(fs.length-3)):fs.length?null:h('span',{class:'help'},a.path==='custom'?'Custom build':'—')),
+    h('span',{class:'hs help'},a.updated),
+    h('button',{class:'icon-btn','aria-label':'More actions for '+a.name,onclick:e=>{e.stopPropagation();if(openMenu){openMenu.remove();openMenu=null}
+      const m=h('div',{class:'menu',role:'menu',onclick:e2=>e2.stopPropagation()},
+        h('button',{onclick:()=>{m.remove();openConfig(a)}},I('sliders',15),'Configure'),
+        h('button',{onclick:()=>{m.remove();openTest(a)}},I('play',15),'Test'),
+        h('button',{onclick:()=>{m.remove();copyText(a.uid,'Agent ID copied')}},I('hash',15),'Copy agent ID'),
+        h('button',{onclick:()=>{m.remove();duplicate(a)}},I('copy',15),'Duplicate'),h('hr'),
+        h('button',{class:'del',onclick:()=>{m.remove();confirmBox('Delete '+a.name+'?','It stops answering straight away. This can’t be undone.','Delete',()=>{AGENTS=AGENTS.filter(x=>x.id!==a.id);render(true);toast('Agent deleted')},true)}},I('trash',15),'Delete'));
+      r.append(m);openMenu=m}},I('dots',18,3)));
+  return r;
+}
+function duplicate(a,snap,label){
+  const n=Object.assign(blankAgent(a.path),clone(snap||snapOf(a)),{id:'a'+Date.now(),uid:makeUid(),name:(snap?snap.name:a.name)+' (copy)',status:'Draft',version:0,history:[],created:today(),updated:today()});
+  n.history.push({kind:'draft',v:0,d:1,date:today(),time:nowTime(),by:'Mohit Prakash',note:'Duplicated from '+a.name+(label?' '+label:''),snap:snapOf(n)});
+  AGENTS.unshift(n);S.fresh=n.id;S.view='agents';S.a=null;render();toast('Duplicated as '+n.name);
+}
+
+/* ===================== start ===================== */
+function startView(){
+  return h('main',{class:'wrap'},
+    h('div',{class:'start-h in'},h('div',{class:'crumb'},'Agents / New agent'),h('h1',null,'How would you like to build it?'),
+      h('p',null,'Both paths take three steps and end with a test chat. Everything stays editable in Configure.')),
+    h('div',{class:'paths'},
+      h('button',{class:'path rec in',style:'--i:1',onclick:()=>startWizard('guided')},
+        h('div',{class:'row'},h('span',{class:'tag v up'},'Recommended'),h('span',{class:'tag n'},'About 3 minutes')),
+        h('h2',null,'Let Eka set it up'),
+        h('p',null,'Pick who it talks to, its personality and what it should help with. Eka writes the instructions; you choose the tools it can use.'),
+        h('ul',null,['System prompt written for you','You choose the Eka EMR and clinical tools it can use','Clinic FAQs, fee list and safety skills attached'].map(x=>h('li',null,I('check',14,2.6),x))),
+        h('div',{class:'foot'},h('span',{class:'btn pri'},'Start guided setup',I('arrowR',15,2.2)))),
+      h('button',{class:'path in',style:'--i:2',onclick:()=>startWizard('custom')},
+        h('div',{class:'row'},h('span',{class:'tag n'},'For teams with a prompt ready')),
+        h('h2',null,'Build it yourself'),
+        h('p',null,'Start blank. Write the system prompt and choose tools, knowledge, datasets and skills yourself.'),
+        h('ul',null,['Full control from the first screen','Same three steps and test chat','Switch to guided any time'].map(x=>h('li',null,I('check',14,2.6),x))),
+        h('div',{class:'foot'},h('span',{class:'btn'},'Start from scratch',I('arrowR',15,2.2))))),
+    h('div',{style:'text-align:center;margin-top:24px'},h('button',{class:'btn ghost',onclick:()=>go('agents')},I('arrowL',15,2.2),'Back to agents')));
+}
+function startWizard(path){S.a=blankAgent(path);S.orig=snapOf(S.a);S.step=1;S.sec='prompt';S.lastSaved=null;go('wizard')}
+
+/* ===================== wizard ===================== */
+const STEPS=['Details','Intent capture','Test & publish'];
+function wizardView(){
+  const a=S.a;
+  const stepper=h('div',{class:'stepper'},STEPS.map((t,i)=>[i?h('span',{class:'sp-line'}):null,
+    h('button',{class:'sp'+(S.step===i+1?' on':S.step>i+1?' done':''),onclick:()=>{if(i+1<S.step||canGo(i+1))setStep(i+1)}},h('span',{class:'n',html:S.step>i+1?ic('check',12,2.8):String(i+1)}),h('span',{class:'t'},t))]),
+    h('span',{class:'tag '+(a.path==='guided'?'v':'n')},a.path==='guided'?'Guided by Eka':'Custom build'));
+  const body=S.step===1?stepDetails():S.step===2?(a.path==='guided'?stepIntentGuided():stepIntentCustom()):stepTest();
+  return h('main',{class:'wrap'+(S.step===3?' full':''),style:'padding-top:28px'},h('div',{class:'crumb'},h('button',{onclick:()=>leaveTo('agents')},'Agents'),' / New agent'),stepper,body);
+}
+function canGo(n){const a=S.a;if(n>=2&&!a.name.trim())return false;if(n>=3&&(a.path==='guided'?!a.features.length:!a.prompt.trim()))return false;return true}
+function setStep(n){
+  const a=S.a;if(a.path==='guided')applyGuided(a,a.touchedGreeting);
+  if(n>S.step&&a.name.trim()){commit(a,'draft');S.orig=snapOf(a);S.lastSaved=nowTime()}
+  S.step=n;render();
+}
+function wizFoot(){
+  const a=S.a,st=S.step;
+  const hint=st===1?(a.name.trim()?'Next: tell Eka what it should help with.':'Give your assistant a name to continue.')
+    :st===2?(a.path==='guided'?(a.features.length?a.features.length+' selected · '+(toolCount(a)?toolCount(a)+' tools on':'no tools on yet'):'Pick at least one thing it should help with.'):(a.prompt.trim()?'Next: try it out.':'Write a system prompt to continue.'))
+    :'Chat with it as a patient would. Publish when it answers the way you want.';
+  const nextBtn=st<3?h('button',{class:'btn pri',disabled:!canGo(st+1),onclick:()=>{if(canGo(st+1))setStep(st+1)}},'Continue',I('arrowR',15,2.2))
+    :h('button',{class:'btn pri',onclick:()=>publishFlow(a)},I('upload',15,2.2),'Publish');
+  return h('div',{class:'wfoot'},h('div',{class:'wfoot-in'},
+    h('button',{class:'btn ghost',onclick:()=>st>1?setStep(st-1):go('start')},I('arrowL',15,2.2),st>1?'Back':'Change path'),
+    h('div',{class:'grow'},h('div',{class:'help',id:'wzhint'},hint),S.lastSaved?h('div',{class:'saved ok'},h('i'),'Draft saved at '+S.lastSaved+'. Nothing goes live until you publish.'):null),
+    st===3?h('button',{class:'btn',onclick:()=>{commit(a,'draft');openConfig(a)}},I('sliders',14,2.2),'Open Configure'):null,nextBtn));
+}
+function refreshFoot(){const f=$('.wfoot');if(f)f.replaceWith(wizFoot())}
+
+function stepDetails(){
+  const a=S.a,guided=a.path==='guided';
+  const upd=()=>{const q=$('#pline');if(q)q.textContent=personaLine()};
+  return h('div',{class:'wz solo in'},h('div',{class:'card pad'},
+    h('section',{class:'q'},h('h2',null,'What should we call your assistant?'),h('p',{class:'sub'},'Patients see this name when they chat. A unique agent ID is created when you continue.'),
+      h('div',{class:'g2'},h('div',{class:'fld'},h('label',{class:'lbl',for:'f-name'},'Assistant name'),h('input',{class:'inp',id:'f-name',placeholder:'e.g. Asha',value:a.name,oninput:e=>{a.name=e.target.value;refreshFoot();upd()}})),
+        h('div',{class:'fld'},h('label',{class:'lbl',for:'f-clinic'},'Clinic or hospital'),h('input',{class:'inp',id:'f-clinic',placeholder:'e.g. Sunrise Clinic, Pune',value:a.clinic,oninput:e=>{a.clinic=e.target.value;upd()}}))),
+      h('div',{class:'fld',style:'margin-top:16px;max-width:380px'},h('label',{class:'lbl',for:'f-spec'},'Speciality'),h('select',{class:'sel',id:'f-spec',onchange:e=>{a.spec=e.target.value}},SPECS.map(s=>h('option',{selected:a.spec===s},s))))),
+    guided?h('section',{class:'q'},h('h2',null,'Who will it talk to?'),h('p',{class:'sub'},'This decides which features we suggest next.'),
+      h('div',{class:'opts c3'},Object.entries(AUD).map(([k,v])=>h('button',{class:'opt','aria-pressed':String(a.aud===k),onclick:()=>{a.aud=k;if(k==='doctors'&&a.persona==='warm')a.persona='clinical';if(k!=='doctors'&&a.persona==='clinical')a.persona='warm';render(true)}},
+        tile(v.icon,v.t),h('b',null,v.label),h('span',{class:'d'},v.d),h('span',{class:'tick',html:ic('check',11,3)}))))):null,
+    guided?h('section',{class:'q'},h('h2',null,'How should it sound?'),h('p',{class:'sub'},'Pick a personality. You can fine-tune the wording later in Configure.'),
+      h('div',{class:'opts c3'},Object.entries(PERSONA).map(([k,v])=>h('button',{class:'opt','aria-pressed':String(a.persona===k),onclick:()=>{a.persona=k;render(true)}},
+        tile(v.icon,v.t),h('b',null,v.label),h('span',{class:'d'},v.d),h('span',{class:'tick',html:ic('check',11,3)})))),
+      h('div',{class:'banner',style:'margin:14px 0 0'},I('chat',15),h('span',{class:'t grow',id:'pline'},personaLine()))):null,
+    !guided?h('section',{class:'q'},h('h2',null,'First message'),h('p',{class:'sub'},'The first thing people see when they open the chat.'),
+      h('div',{class:'fld',style:'max-width:520px'},h('label',{class:'lbl',for:'f-greet'},'First message'),h('input',{class:'inp',id:'f-greet',placeholder:'Hi, how can I help you today?',value:a.greeting,oninput:e=>{a.greeting=e.target.value}}))):null));
+}
+function chipSet(all,cur,set){return h('div',{class:'chips'},all.map(l=>h('button',{class:'chip','aria-pressed':String(cur.includes(l)),onclick:e=>{const has=e.currentTarget.getAttribute('aria-pressed')==='true';cur=has?cur.filter(x=>x!==l):cur.concat(l);set(cur);e.currentTarget.setAttribute('aria-pressed',String(!has))}},l)))}
+function modelSelect(a,id){return h('select',{class:'sel',id:id,onchange:e=>{a.model=e.target.value}},MODELS.map(([g,ms])=>h('optgroup',{label:g},ms.map(m=>h('option',{value:m,selected:a.model===m},m+(m===OPT.model?' · Optimal':''))))))}
+function personaLine(){const a=S.a;return '“'+PERSONA[a.persona].line.replace('{n}',a.name.trim()||'Asha').replace('{c}',a.clinic.trim()||'Sunrise Clinic')+'”'}
+
+function stepIntentGuided(){
+  const a=S.a;
+  const sorted=FEATURES.slice().sort((x,y)=>(y.aud.includes(a.aud))-(x.aud.includes(a.aud)));
+  const notes=h('textarea',{class:'ta',id:'f-notes',rows:4,placeholder:'e.g. We don’t do home visits. Sunday is closed. Parking is in the basement.',value:a.notes,oninput:e=>{a.notes=e.target.value;applyGuided(a,true)}});
+  return h('div',{class:'wz'},
+    h('div',{class:'card pad in'},
+      h('section',{class:'q'},h('h2',null,'What should '+(a.name.trim()||'it')+' help with?'),h('p',{class:'sub'},'Pick everything that applies. Each one adds its instructions to the prompt and switches on what it needs — nothing else to set up.'),
+        h('div',{class:'feat-grid'},sorted.map(f=>h('button',{class:'feat','data-f':f.id,'aria-pressed':String(a.features.includes(f.id)),onclick:e=>{toggleFeature(a,f.id,!a.features.includes(f.id));e.currentTarget.setAttribute('aria-pressed',String(a.features.includes(f.id)));paintRail();refreshFoot()}},
+          tile(f.icon,f.t),h('div',{class:'grow'},h('b',null,f.label),h('span',{class:'d'},f.d),f.aud.includes(a.aud)?h('span',{class:'tag n sug'},'Suggested for '+AUD[a.aud].label.toLowerCase()):null),h('span',{class:'tick',html:ic('check',10,3)}))))),
+      h('section',{class:'q'},h('h2',null,'Anything it should know, or never do?'),h('p',{class:'sub'},'Plain sentences, one per line. Eka adds them to the instructions as clinic rules.'),
+        notes,h('div',{class:'ex'},['Sunday is closed.','Don’t quote surgery costs; ask them to call.','Mention free parking in the basement.','Reply in Hindi first.'].map(x=>h('button',{onclick:()=>{a.notes=(a.notes.trim()?a.notes.trim()+'\n':'')+x;notes.value=a.notes;applyGuided(a,true)}},'+ '+x))))),
+    h('aside',{class:'side in',style:'--i:2'},h('div',{class:'card',id:'rail'},railInner())));
+}
+function railInner(){
+  const a=S.a,tc=toolCount(a),sec=(a.prompt.match(/^##+ /gm)||[]).length;
+  const row=(icon,t,title,d,num)=>h('div',{class:'su'},tile(icon,t),h('div',{class:'grow'},h('b',null,title),h('div',{class:'d'},d)),h('span',{class:'num'},num));
+  return [h('h3',null,'Eka is setting up'),h('p',{class:'sub'},'Updates as you pick. Change any of it later in Configure.'),
+    row('doc','v','System prompt',a.features.length?'Written from your answers · '+PERSONA[a.persona].label.toLowerCase():'Waiting for features',String(sec)),
+    row('wrench','b','Tools',tc?list([...new Set(Object.keys(a.tools).map(k=>SERVERS.find(s=>s.id===k.split(':')[0]).name))]):'None yet · choose them below',String(tc)),
+    row('book','g','Knowledge base',a.kb.length?a.kb.map(k=>KB.find(x=>x.id===k).name).join(', '):'None yet',String(a.kb.length)),
+    row('table','y','Datasets',a.data.length?a.data.map(k=>DATASETS.find(x=>x.id===k).name).join(', '):'None yet',String(a.data.length)),
+    row('puzzle','r','Skills',a.skills.length?a.skills.map(k=>SKILLS.find(x=>x.id===k).name).join(', '):'None yet',String(a.skills.length)),
+    row('chip','n','Model',a.model+' · Optimal','')];
+}
+function paintRail(){const r=$('#rail');if(!r)return;r.innerHTML='';r.append(...railInner());r.querySelectorAll('.num').forEach(n=>{n.classList.add('bump')})}
+function stepIntentCustom(){
+  const a=S.a;
+  return h('div',{class:'in'},
+    h('div',{class:'banner'},I('spark',15),h('span',{class:'t grow'},'You’re building from scratch. Write the system prompt, then add tools, knowledge, datasets and skills.'),
+      h('button',{class:'link',onclick:()=>{a.path='guided';S.step=2;applyGuided(a);render()}},'Switch to guided')),
+    configBody(true));
+}
+function stepTest(){
+  const a=S.a,tc=toolCount(a);
+  const ck=(ok,title,d)=>h('span',{class:'ckp'+(ok?'':' w'),title:d},h('span',{class:'ci',html:ic(ok?'check':'alert',11,3)}),h('b',null,title),h('span',{class:'d'},d));
+  return h('div',{class:'testfull in'},
+    h('div',{class:'ckbar'},h('b',{class:'ckh'},'Before you publish'),
+      ck(true,'Details',a.name+(a.clinic?' · '+a.clinic:'')),
+      ck(!!a.prompt.trim(),'System prompt',a.path==='guided'?(a.promptEdited?'Edited by you':'Written by Eka'):'Written by you'),
+      ck(tc>0,'Tools',tc?tc+' on':'None on: it can chat but not book or look things up'),
+      ck(true,'Knowledge & data',(a.kb.length+a.data.length)+' sources · '+a.skills.length+' skills'),
+      ck(true,'Model',a.model+' · Optimal'),
+      ck(true,'Safety','Emergencies go to 108')),
+    chatWindow(a,false,null,true));
+}
+
+/* ===================== chat engine ===================== */
+function chatWindow(a,inDrawer,onClose,big){
+  const A=a.appearance,acc=A.accent||'#6B5CE0';
+  const C={msgs:[{who:'bot',text:a.greeting||('Hi, I’m '+(a.name||'your assistant')+'. How can I help?')}],qr:[...new Set(a.quickReplies.filter(x=>x&&x.trim()).concat(starters(a)))].slice(0,4),busy:false,flow:null};
+  const msgs=h('div',{class:'msgs'}),qr=h('div',{class:'qr'});
+  const input=h('input',{placeholder:'Type as a patient would…','aria-label':'Message',autocomplete:'off'});
+  const bg=A.bg==='soft'?'linear-gradient(160deg,#F7F4FF 0%,#EEF6FF 55%,#FDF2FA 100%)':A.bg==='pastel'?'radial-gradient(60% 45% at 18% 22%,#FBE6D9,transparent 70%),radial-gradient(55% 45% at 88% 18%,#9ED2CC,transparent 70%),linear-gradient(165deg,#F3E6E1,#D8C8D9)':'var(--white)';
+  msgs.style.background=bg;
+  function paint(){
+    msgs.innerHTML='';
+    C.msgs.forEach(m=>{
+      if(m.who==='tools')msgs.append(h('div',{class:'tc'},m.list.map(t=>h('span',null,I('wrench',10,2.4),t))));
+      else if(m.who==='slots')msgs.append(h('div',{class:'slotcard'},h('b',null,m.doc),h('small',null,m.sub),h('div',{class:'slots'},m.slots.map(s=>h('button',{onclick:()=>say(s+' with '+m.doc.split(' · ')[0])},s)))));
+      else{const el=h('div',{class:'m '+m.who},m.text);if(m.who==='you')el.style.background=acc;msgs.append(el)}
+    });
+    if(C.busy)msgs.append(h('div',{class:'typing'},h('i'),h('i'),h('i')));
+    msgs.scrollTop=msgs.scrollHeight;
+    qr.innerHTML='';if(!C.busy)C.qr.forEach(t=>qr.append(h('button',{onclick:()=>say(t)},t)));
+  }
+  function say(t){
+    if(C.busy)return;C.msgs.push({who:'you',text:t});C.qr=[];C.busy=true;paint();
+    const steps=reply(a,C,t);let d=600;
+    steps.forEach((s,i)=>{setTimeout(()=>{if(s.qr)C.qr=s.qr;else C.msgs.push(s);if(i===steps.length-1){C.busy=false;if(!C.qr.length&&!C.flow)C.qr=starters(a).slice(0,4)}paint()},d);d+=s.who==='tools'?450:650});
+  }
+  const win=h('div',{class:'window'+(big?' big':'')},
+    h('div',{class:'bothead'+(A.darkHeader?' dark':'')},h('span',{class:'bav',style:'background:'+acc,html:ic(A.agentIcon==='headset'?'headset':'bot',17)}),
+      h('div',{class:'grow'},h('b',{style:'color:'+(A.darkHeader?lighten(acc):acc)},a.name||'Assistant'),h('small',null,'Online · test mode, nothing is booked')),
+      h('button',{class:'btn sm ghost',title:'New chat',onclick:()=>{C.msgs=C.msgs.slice(0,1);C.qr=starters(a).slice(0,4);C.flow=null;paint()}},I('refresh',13,2.2)),
+      inDrawer?h('button',{class:'btn sm ghost','aria-label':'Close test',onclick:()=>endChat()},I('x',15,2.4)):null),
+    msgs,qr,
+    h('form',{class:'cin',onsubmit:e=>{e.preventDefault();const v=input.value.trim();if(v){input.value='';say(v)}}},
+      a.inputs.file?h('button',{type:'button',class:'ib','aria-label':'Attach a file'},I('paper',16)):null,input,
+      a.inputs.audio?h('button',{type:'button',class:'ib','aria-label':'Voice'},I('mic',16)):null,
+      h('button',{type:'submit',class:'ib send','aria-label':'Send',style:'background:'+acc},I('send',15,2.4))),
+    h('div',{class:'pow'},'Powered by Eka Care'));
+  function endChat(){
+    if(!a.feedback.on||C.msgs.length<3){onClose&&onClose();return}
+    let pick=null;const opts=['Poor','Average','Good','Excellent'];
+    const ov=h('div',{class:'fbov'},h('div',{class:'card'},h('b',{style:'color:var(--ink)'},a.feedback.title),
+      h('div',{class:'rates'},opts.map(o=>h('button',{'aria-pressed':'false',onclick:e=>{pick=o;$$('.rates button',ov).forEach(b=>b.setAttribute('aria-pressed',String(b===e.currentTarget)))}},o))),
+      h('div',{class:'row',style:'justify-content:center'},h('button',{class:'btn sm ghost',onclick:()=>onClose&&onClose()},'Skip'),h('button',{class:'btn sm pri',onclick:()=>{toast(pick?'Thanks for the feedback':'Feedback skipped','info');onClose&&onClose()}},'Submit & exit'))));
+    win.append(ov);
+  }
+  setTimeout(paint,0);
+  return win;
+}
+function lighten(hex){const n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255,f=x=>Math.round(x+(255-x)*.45);return'rgb('+f(r)+','+f(g)+','+f(b)+')'}
+function starters(a){
+  const f=featureSet(a),q=[];
+  if(f.includes('book'))q.push('I want to see a cardiologist this week');
+  if(f.includes('faq'))q.push('What is the consultation fee?');
+  if(f.includes('abha'))q.push('Help me create my ABHA');
+  if(f.includes('records'))q.push('Show my latest lab report');
+  if(f.includes('register'))q.push('Register a new patient');
+  if(f.includes('intake'))q.push('I have a fever since 3 days');
+  if(f.includes('medicine'))q.push('Dose of Dolo 650 for adults?');
+  if(f.includes('guidelines'))q.push('BP target in diabetes per RSSDI');
+  if(f.includes('calc'))q.push('BMI for 72 kg, 170 cm');
+  if(a.aud!=='doctors')q.push('I have severe chest pain');
+  if(!q.length)q.push('What can you help me with?');
+  return q.slice(0,5);
+}
+function reply(a,C,raw){
+  const t=raw.toLowerCase(),f=featureSet(a),B=x=>({who:'bot',text:x}),T=(...l)=>({who:'tools',list:l}),Q=(...q)=>({qr:q});
+  const clinic=a.clinic||'the clinic';
+  if(/chest pain|can'?t breathe|breathless|bleeding|fainted|suicid/.test(t)){C.flow=null;return[B('This could be an emergency. Please call 108 now or go to the nearest emergency room. If someone is with you, ask them to take you.')]}
+  if(C.flow==='slot'&&/with dr/.test(t)){C.flow='mobile';C.slot=raw;return[B('Great. What’s your mobile number? I’ll find your record.'),Q('+91 98200 41733')]}
+  if(C.flow==='mobile'){C.flow='confirm';return[T('get_patient_by_mobile'),B('Found you, Priya Sharma.\nShall I book '+C.slot+'?'),Q('Yes, book it','Pick another time')]}
+  if(C.flow==='confirm'){C.flow=null;if(/another/.test(t)){C.flow='slot';return[T('get_appointment_slots'),slots()]}
+    return[T('book_appointment'),B('Booked. '+C.slot+' at '+clinic+'.\nAppointment ID APT-48213. You can reschedule or cancel here.')]}
+  if(C.flow==='abha'){C.flow='otp';return[T('abha_send_otp'),B('I’ve sent a 6-digit OTP to that number. Type it here.'),Q('482913')]}
+  if(C.flow==='otp'){C.flow=null;return[T('abha_verify_otp'),B('You’re in. Your ABHA address is priya.sharma@abdm and your ABHA card is ready to download.')]}
+  if(C.flow==='rec'){C.flow='open';return[T('authentication_elicitation','list_patient_records'),B('Verified. Your latest records:\n• Complete Blood Count · 12 Oct\n• Prescription, Dr. Ananya Rao · 2 Oct'),Q('Open the blood count')]}
+  if(C.flow==='open'){C.flow=null;return[T('get_patient_record'),B('Here’s your CBC report (PDF). In short: haemoglobin is slightly low at 11.2 g/dL; everything else is in the usual range. Please go through it with your doctor.')]}
+  if(C.flow==='intake'){C.flow='intake2';return[B('Thanks. Are you taking any medicines right now, and do you have any allergies?'),Q('Paracetamol only, no allergies')]}
+  if(C.flow==='intake2'){C.flow=null;return[B('Got it. I’ve sent this summary to the doctor:\n• Fever, 3 days\n• Taking paracetamol\n• No known allergies\nWould you like to book a visit today?')]}
+  if(C.flow==='reg'){C.flow=null;return[T('search_patients','add_patient'),B('Registered: Priya Sharma, 14 Mar 1991, female, +91 98200 41733. Patient ID P-10482.')]}
+  C.flow=null;
+  if(f.includes('book')&&/book|appointment|slot|see a|cardio|doctor|visit/.test(t)){C.flow='slot';return[T('get_business_entities','get_available_dates','doctor_availability_elicitation'),B('Here’s who is free this week at '+clinic+':'),slots()]}
+  if(f.includes('faq')&&/timing|open|hours|when/.test(t))return[T('get_clinic_details_basic'),B('OPD runs Monday to Saturday, 9 am to 8 pm. Sunday is closed. Dr. Ananya Rao (Cardiology) sees patients Mon, Wed and Fri, 10 am to 2 pm.')];
+  if(f.includes('faq')&&/fee|cost|charge|parking|address|insurance/.test(t))return[T('get_clinic_details_basic'),B('A new consultation is ₹700. Follow-ups within 7 days are free, after that ₹400.')];
+  if(f.includes('abha')&&/abha|abdm|health id/.test(t)){C.flow='abha';return[B('Sure. Which mobile number is linked to your Aadhaar? I’ll send an OTP.'),Q('+91 98200 41733')]}
+  if(f.includes('records')&&/report|record|prescription|lab/.test(t)){C.flow='rec';return[B('To keep your records safe, I’ll verify you with an OTP on your registered mobile.'),Q('Send the OTP')]}
+  if(f.includes('register')&&/register|new patient/.test(t)){C.flow='reg';return[B('Please share full name, date of birth, gender and mobile number.'),Q('Priya Sharma, 14 Mar 1991, female, +91 98200 41733')]}
+  if(f.includes('intake')&&/fever|pain|cough|since|days|symptom/.test(t)){C.flow='intake';return[B('I’m sorry to hear that. How high has the fever been, and any other symptoms like cough or body ache?'),Q('Up to 101°F, with body ache')]}
+  if(f.includes('medicine')&&/dolo|paracetamol|dose|tablet|drug|medicine/.test(t))return[T('indian_branded_drug_search','indian_pharmacology_details'),B('Dolo 650 is paracetamol 650 mg (Micro Labs). Adults: 500 mg–1 g every 4–6 hours, maximum 4 g a day. Reduce in hepatic impairment.')];
+  if(f.includes('guidelines')&&/guideline|rssdi|icmr|target|protocol/.test(t))return[T('indian_treatment_protocol_search'),B('Sample answer: most guidelines, including RSSDI, aim for BP below 130/80 mmHg in adults with diabetes.')];
+  if(f.includes('calc')&&/bmi|egfr|calculat|score/.test(t))return[T('medical_calculator_list','medical_calculator_input','medical_calculator_output'),B('BMI is 24.9 kg/m². Normal by WHO cut-offs; overweight by the Asian cut-off of 23.')];
+  return[B('I can help with '+(f.length?list(f.map(x=>FEAT[x].label.toLowerCase())):'general questions about '+clinic)+'. For anything else, please call the front desk.'),Q(...starters(a).slice(0,3))];
+}
+function slots(){return{who:'slots',doc:'Dr. Ananya Rao · Cardiology',sub:'Wed 22 Oct and Fri 24 Oct',slots:['Wed 22 Oct · 10:30 am','Wed 22 Oct · 12:00 pm','Fri 24 Oct · 11:15 am']}}
+
+/* ===================== configure ===================== */
+const SECS=[['general','Configure','sliders'],['prompt','System prompt','doc'],['tools','Tools','wrench'],['chat','Chat window','palette'],['kb','Knowledge base','book'],['data','Datasets','table'],['skills','Skills','puzzle'],
+  ['playground','Playground','play'],
+  ['-','Advanced'],['model','Model','chip'],['feedback','Feedback form','star'],['byoa','Bring your own auth','lock']];
+const reSec=k=>{const b=$('#cbody');if(b){b.innerHTML='';b.append(section(k))}};
+function openConfig(a){S.a=a;S.orig=snapOf(a);S.sec='general';S.loaded=null;S.lastSaved=null;go('config')}
+function configView(){
+  const a=S.a;
+  return h('main',{class:'wrap',style:'padding-top:24px'},
+    h('div',{class:'crumb'},h('button',{onclick:()=>leaveTo('agents')},'Agents'),' / '+(a.name||'Untitled')),
+    h('div',{class:'chead'},
+      h('div',{class:'grow'},h('div',{class:'row',style:'flex-wrap:wrap;gap:8px'},h('h1',{id:'ctitle'},a.name||'Untitled agent'),
+          h('span',{class:'tag '+(a.status==='Live'?'ok':'dr')},a.status==='Live'?'● Live':'Draft'),a.version?h('span',{class:'tag n'},'v'+a.version):null,hasDraft(a)?h('span',{class:'tag dr'},'Draft changes'):null,h('span',{class:'tag v'},a.path==='guided'?'Guided':'Custom')),
+        a.uid?h('button',{class:'idpill',title:'Copy agent ID',onclick:()=>copyText(a.uid,'Agent ID copied')},h('span',null,a.uid),I('copy',12)):null),
+      h('div',{class:'row',style:'flex-wrap:wrap'},
+        h('button',{class:'btn ghost',onclick:()=>leaveTo('agents')},'Cancel'),
+        h('span',{title:ready(a)?'Chat with it in its real widget':'Add a name, prompt and model to test'},h('button',{class:'btn',disabled:!ready(a),onclick:()=>openTest(a)},I('play',13,2.2),'Test')),
+        h('button',{class:'btn',onclick:()=>saveDraftAndLeave()},'Save draft'),
+        h('button',{class:'btn pri',onclick:()=>publishFlow(a)},I('upload',15,2.2),'Publish'),
+        a.history.length?h('span',{style:'position:relative'},h('button',{class:'icon-btn','aria-label':'More',title:'More',onclick:e=>{e.stopPropagation();if(openMenu){openMenu.remove();openMenu=null;return}
+          const m=h('div',{class:'menu',style:'right:0;top:42px',onclick:e2=>e2.stopPropagation()},h('button',{onclick:()=>{m.remove();openMenu=null;openHistory(a)}},I('history',15),'Version history'),h('button',{onclick:()=>{m.remove();openMenu=null;duplicate(a)}},I('copy',15),'Duplicate agent'));
+          e.currentTarget.parentNode.append(m);openMenu=m}},I('dots',18,3))):null)),
+    S.loaded?h('div',{class:'banner warn'},I('history',15),h('span',{class:'t grow'},S.loaded+' is loaded. Save draft or publish to keep it.'),h('button',{class:'btn sm',onclick:()=>{Object.assign(a,S.preLoad);S.loaded=null;render(true);toast('Loaded version discarded','info')}},'Discard')):null,
+    configBody(false));
+}
+function cfgFoot(){
+  const a=S.a,i=SECS.findIndex(s=>s[0]===S.sec),nx=SECS.slice(i+1).find(s=>s[0]!=='-');
+  return h('div',{class:'wfoot'},h('div',{class:'wfoot-in'},
+    h('div',{class:'grow'},h('div',{class:'saved'+(S.lastSaved?' ok':'')},h('i'),S.lastSaved?'Draft saved at '+S.lastSaved+'. '+(a.status==='Live'?'v'+a.version+' stays live until you publish.':'Nothing goes live until you publish.'):a.status==='Live'?'Live as v'+a.version+'. Changes are saved as a draft until you publish.':'Each Next saves your work as a draft.')),
+    nx?h('button',{class:'btn pri',onclick:()=>{if(dirty()&&a.name.trim()){commit(a,'draft');S.orig=snapOf(a);S.lastSaved=nowTime()}S.sec=nx[0];render()}},'Next: '+nx[1],I('arrowR',15,2.2))
+      :h('button',{class:'btn pri',onclick:()=>publishFlow(a)},I('upload',15,2.2),'Publish')));
+}
+function saveDraftAndLeave(){const a=S.a;if(!a.name.trim()){S.sec='general';render();toast('Give the agent a name first','info');return}commit(a,'draft',S.loaded?'Restored from '+S.loaded:'');S.fresh=a.id;S.loaded=null;S.view='agents';render();toast('Your agent has been saved as a draft')}
+function publishFlow(a){
+  if(!a.name.trim()){if(S.view==='config'){S.sec='general';render()}toast('Give the agent a name first','info');return}
+  if(!a.prompt.trim()){if(S.view==='config'){S.sec='prompt';render()}toast('Add a system prompt before publishing','info');return}
+  confirmBox('Publish your changes?',a.status==='Live'?'Your changes go live as this agent straight away.':'Your agent goes live straight away, and people can start chatting with it.','Confirm',()=>{
+    commit(a,'published',S.loaded?'Restored from '+S.loaded:'');S.loaded=null;S.fresh=a.id;S.view='agents';S.a=null;render();toast('Your agent has been published successfully')});
+}
+const ADV_SECS=['model','feedback','byoa'];
+function configBody(inline){
+  const a=S.a;
+  if(inline&&!['prompt','tools','kb','data','skills'].includes(S.sec))S.sec='prompt';
+  const counts={tools:toolCount(a),kb:a.kb.length,data:a.data.length,skills:a.skills.length,playground:a.history.length||null};
+  let secs=inline?SECS.filter(s=>['prompt','tools','kb','data','skills'].includes(s[0])):SECS;
+  if(!inline&&!S.cfgAdv){secs=secs.filter(s=>!ADV_SECS.includes(s[0]));if(ADV_SECS.includes(S.sec))S.sec='general'}
+  const body=h('div',{id:'cbody'},section(S.sec));
+  const nav=h('nav',{class:'cnav','aria-label':'Configure sections'},secs.map(([k,l,i])=>k==='-'?
+    h('button',{class:'grp',onclick:()=>{S.cfgAdv=!S.cfgAdv;render(true)}},l+(S.cfgAdv?' — hide':' — show '+ADV_SECS.length)):
+    h('button',{class:S.sec===k?'on':null,'data-k':k,onclick:()=>{S.sec=k;body.innerHTML='';body.append(section(k));$$('.cnav button').forEach(x=>x.classList.toggle('on',x.dataset.k===k));if(!inline){const f=$('.wfoot');if(f)f.replaceWith(cfgFoot())}}},I(i,15),l,counts[k]!=null?h('span',{class:'c'},String(counts[k])):null)));
+  return h('div',{class:'cfg'},nav,body);
+}
+function refreshCounts(){const a=S.a,c={tools:toolCount(a),kb:a.kb.length,data:a.data.length,skills:a.skills.length,playground:a.history.length||null};$$('.cnav button').forEach(b=>{const s=b.querySelector('.c');if(s&&c[b.dataset.k]!=null)s.textContent=c[b.dataset.k]});if(S.view==='wizard'){refreshFoot();paintRail()}}
+function secHead(title,sub,action){return h('div',{class:'sec-h'},h('div',{class:'grow'},h('h2',null,title),h('p',null,sub)),action||null)}
+function sw(checked,label,on){return h('label',{class:'sw'},h('input',{type:'checkbox','aria-label':label,checked:checked,onchange:e=>on(e.target.checked)}),h('i'))}
+function section(k){
+  const a=S.a;
+  if(k==='general'){
+    const qr=h('div',{class:'stack',style:'gap:8px'});
+    const paintQR=()=>{qr.innerHTML='';if(!a.quickReplies.length)qr.append(h('div',{class:'help'},'No quick replies yet. Add one to suggest a first question.'));
+      a.quickReplies.forEach((r,i)=>qr.append(h('div',{class:'qrrow'},h('input',{class:'inp',value:r,placeholder:'Reply '+(i+1),oninput:e=>{a.quickReplies[i]=e.target.value;a.qrTouched=true}}),h('button',{class:'icon-btn','aria-label':'Delete quick reply',onclick:()=>{a.quickReplies.splice(i,1);a.qrTouched=true;paintQR()}},I('trash',15)))))};
+    paintQR();
+    return h('div',null,secHead('Configure','Name, greeting, who it talks to and what it accepts.'),
+      h('div',{class:'card pad stack',style:'gap:20px'},
+        h('div',{class:'g2'},h('div',{class:'fld'},h('label',{class:'lbl'},'Agent name'),h('input',{class:'inp',value:a.name,oninput:e=>{a.name=e.target.value;const t=$('#ctitle');if(t)t.textContent=a.name||'Untitled agent'}})),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Clinic or hospital'),h('input',{class:'inp',value:a.clinic,oninput:e=>{a.clinic=e.target.value}}))),
+        h('div',{class:'fld'},h('label',{class:'lbl'},'Welcome message'),h('input',{class:'inp',value:a.greeting,oninput:e=>{a.greeting=e.target.value;a.touchedGreeting=true}}),h('span',{class:'help'},'The first message people see.')),
+        h('div',{class:'fld'},h('span',{class:'lbl'},'Quick replies'),h('span',{class:'help'},'Tappable suggestions under the welcome message.'),qr,h('div',null,h('button',{class:'btn sm',onclick:()=>{a.qrTouched=true;a.quickReplies.push('');paintQR();const l=qr.querySelector('.qrrow:last-child input');if(l)l.focus()}},I('plus',13,2.4),'Add reply'))),
+        h('div',{class:'g2'},h('div',{class:'fld'},h('span',{class:'lbl'},'Allowed input types'),h('div',{class:'checks-in'},INPUTS.map(([k2,l])=>h('label',{class:'chk'},h('input',{type:'checkbox',checked:a.inputs[k2],onchange:e=>{a.inputs[k2]=e.target.checked}}),l)))),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Idle session expiry'),h('div',{class:'row'},h('input',{class:'inp',type:'number',min:30,max:360,step:15,value:a.idle,style:'max-width:110px',oninput:e=>{a.idle=+e.target.value}}),h('span',{class:'help'},'minutes (30 min – 6 hrs)')))),
+        h('div',{class:'g2'},h('div',{class:'fld'},h('label',{class:'lbl'},'Talks to'),h('select',{class:'sel',onchange:e=>{a.aud=e.target.value}},Object.entries(AUD).map(([k2,v])=>h('option',{value:k2,selected:a.aud===k2},v.label)))),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Personality'),h('select',{class:'sel',onchange:e=>{a.persona=e.target.value;if(a.path==='guided'){applyGuided(a,a.touchedGreeting)}}},Object.entries(PERSONA).map(([k2,v])=>h('option',{value:k2,selected:a.persona===k2},v.label)))))));
+  }
+  if(k==='prompt'){
+    const ed=h('textarea',{class:'ta editor',id:'f-prompt','aria-label':'System prompt',placeholder:'Write your prompt here, or answer a few questions and Eka writes it for you.',value:a.prompt});
+    const vb=h('div',{class:'vbar'});
+    const meta=()=>{const n=Math.round(a.prompt.length/4),cls=n>=4000?'bad':n>=2000?'dr':'ok';vb.innerHTML='';
+      vb.append(h('span',null,'Tokens used ',h('b',null,n.toLocaleString())),h('span',{class:'tag '+cls},n>=4000?'High':n>=2000?'Moderate':'Optimal'),h('span',{title:'Optimal under 2,000 · Moderate 2,000–3,999 · High 4,000+'},I('info',14)),h('span',null,a.prompt.length.toLocaleString()+' characters'),
+        h('span',{class:'grow'}),h('button',{class:'btn sm soft',onclick:()=>{aiBox.hidden=!aiBox.hidden}},I('wand',13),'Edit with AI'))};
+    ed.oninput=()=>{a.prompt=ed.value;if(a.path==='guided')a.promptEdited=true;if(a.qa&&a.qa.written){const e=a.prompt!==a.qa.generated;if(e!==a.qa.edited){a.qa.edited=e;const t=$('.diy-done .grow');if(t)t.textContent=e?'Written from your answers, then edited by you.':'Written from your answers. Change anything you like.'}}meta();if(S.view==='wizard')refreshFoot()};
+    const aiIn=h('input',{class:'inp',value:'Make it stricter about not guessing doses'});
+    const aiOut=h('div');
+    const aiBox=h('div',{class:'card pad',hidden:true,style:'margin-top:10px;padding:16px'},h('div',{class:'row'},aiIn,h('button',{class:'btn sm pri',onclick:()=>{const add='- If you cannot recall a dose with confidence, give the usual range, mark it "verify against label", and do not state a single number.';
+      aiOut.innerHTML='';aiOut.append(h('pre',{class:'snip',style:'margin-top:10px'},add),h('div',{class:'row',style:'margin-top:10px'},h('button',{class:'btn sm pri',onclick:()=>{a.prompt=a.prompt.replace(/\s+$/,'')+'\n'+add;ed.value=a.prompt;if(a.path==='guided')a.promptEdited=true;meta();aiBox.hidden=true;toast('Suggestion applied')}},'Apply'),h('span',{class:'help'},'Simulated. A real build sends your request to a model.')))}},'Suggest')),aiOut);
+    const vars=h('div');
+    const paintVars=()=>{vars.innerHTML='';if(!a.vars.length)vars.append(h('div',{class:'help'},'No variables yet.'));
+      a.vars.forEach((v,i)=>vars.append(h('div',{class:'vrow'},h('button',{class:'var',title:'Insert at cursor',onclick:()=>{ed.focus();ed.setRangeText('{{'+v+'}}',ed.selectionStart,ed.selectionEnd,'end');a.prompt=ed.value;meta()}},'{{'+v+'}}'),h('span',{class:'grow'}),h('button',{class:'icon-btn','aria-label':'Delete variable',style:'width:26px;height:26px',onclick:()=>{a.vars.splice(i,1);paintVars()}},I('trash',13)))))};
+    paintVars();
+    const vNew=h('input',{class:'inp',placeholder:'variable_name','aria-label':'New variable'});
+    meta();
+    const written=a.qa&&a.qa.written;
+    return h('div',null,secHead('System prompt','The instructions the agent follows on every message.',h('div',{class:'row'},
+        h('button',{class:'btn sm',onclick:openQA},I('wand',13),written?'Edit answers':'Answer questions'),
+        h('button',{class:'btn sm',onclick:()=>openTemplates(body=>{a.prompt=body;ed.value=body;if(a.path==='guided')a.promptEdited=true;(body.match(/\{\{(\w+)\}\}/g)||[]).map(m=>m.slice(2,-2)).forEach(v=>{if(!a.vars.includes(v))a.vars.push(v)});paintVars();meta()})},I('layers',13),'Build with templates'))),
+      written?h('div',{class:'diy-done'},I('check',16,2.4),h('span',{class:'grow'},a.qa.edited?'Written from your answers, then edited by you.':'Written from your answers. Change anything you like.'),
+          h('button',{class:'btn sm ghost',onclick:showMaster},'See master template'))
+        :a.path==='guided'?h('div',{class:'banner ok'},I('spark',15),h('span',{class:'t grow'},a.promptEdited?'Written by Eka, edited by you.':'Written by Eka from your guided answers. Edit freely.'))
+        :h('div',{class:'diy-nudge'},h('span',{class:'tile',html:ic('wand',18)}),
+          h('div',{class:'grow'},h('b',null,a.prompt.trim()?'Want Eka to write it instead?':'Don’t want to write a prompt?'),h('span',null,'Answer five quick questions about your clinic and Eka writes the prompt for you with AI.')),
+          h('button',{class:'btn sm pri',onclick:openQA},I('wand',13),'Answer questions')),
+      h('div',{class:'pgrid'},
+        h('div',null,ed,vb,aiBox),
+        h('aside',null,h('div',{class:'railbox'},h('h4',null,'Variables'),vars,
+          h('form',{class:'vadd',onsubmit:e=>{e.preventDefault();const v=vNew.value.trim().replace(/[^A-Za-z0-9_]/g,'_');if(v&&!a.vars.includes(v)){a.vars.push(v);paintVars()}vNew.value=''}},vNew,h('button',{class:'btn sm',type:'submit'},'Add')),
+          h('p',{class:'help',style:'margin:10px 0 0'},'Click a name to insert it at the cursor. Values are filled during the chat.')),
+          written?h('div',{class:'railbox filled'},h('h4',null,'Filled in for you'),h('p',{class:'help',style:'margin:-4px 0 6px'},'Your answers, placed into Eka’s master prompt.'),
+            qFilledRows(a).map(([k2,v])=>h('div',{class:'fr'},h('span',null,h('span',{class:'qd-var'},'{{'+k2+'}}')),h('span',null,v)))):null)));
+  }
+  if(k==='tools'){
+    const sorted=FEATURES.slice().sort((x,y)=>(y.aud.includes(a.aud))-(x.aud.includes(a.aud)));
+    const grid=h('div',{class:'feat-grid'},sorted.map(f=>h('button',{class:'feat','data-f':f.id,'aria-pressed':String(a.features.includes(f.id)),onclick:e=>{toggleFeature(a,f.id,!a.features.includes(f.id));e.currentTarget.setAttribute('aria-pressed',String(a.features.includes(f.id)));refreshCounts()}},
+      tile(f.icon,f.t),h('div',{class:'grow'},h('b',null,f.label),h('span',{class:'d'},f.d)),h('span',{class:'tick',html:ic('check',10,3)}))));
+    let advOpen=false;
+    const advBox=h('div',{class:'stack',hidden:true,style:'gap:16px;margin-top:14px'},
+      h('div',{class:'access'},
+        h('div',null,h('h4',null,'Workspace access ',h('span',{class:'tag dr up'},'Open pointer')),h('ol',null,['Inspect the Tools page','Application → Cookies → copy sess','Decode it on jwt.io','Paste the payload into x-eka-jwt-payload'].map(t=>h('li',null,t)))),
+        h('div',null,h('h4',null,'Proposed'),h('p',{class:'help',style:'margin:0'},'One click links the agent to your signed-in workspace and the console fills the header for every Eka tool.'),
+          a.wsConnected?h('div',{class:'banner ok',style:'margin:10px 0 0'},I('check',14,2.4),'Connected to workspace '+WS_ID):h('button',{class:'btn sm pri',style:'margin-top:10px',onclick:()=>{a.wsConnected=true;const b=$('#cbody');b.innerHTML='';b.append(section('tools'));toast('Workspace connected')}},I('link',13),'Connect my Eka workspace'))),
+      h('div',null,h('div',{class:'row',style:'margin-bottom:8px'},h('b',{class:'grow'},'Individual tools'),h('button',{class:'btn sm',onclick:addServer},I('plus',13,2.4),'Connect MCP server')),toolList(a,refreshCounts)));
+    const advBtn=h('button',{class:'btn sm',style:'margin-top:16px'},I('sliders',13,2.4),h('span',null,'Show advanced: individual tools & workspace access'));
+    advBtn.onclick=()=>{advOpen=!advOpen;advBox.hidden=!advOpen;advBtn.lastChild.textContent=advOpen?'Hide advanced':'Show advanced: individual tools & workspace access'};
+    return h('div',null,secHead('Tools','Pick what it can do. Each one switches on exactly the actions it needs in Eka — nothing else to wire up.'),grid,advBtn,advBox);
+  }
+  if(k==='kb'){
+    const el=h('div',{class:'card'});
+    KB.forEach(x=>el.append(h('div',{class:'li'},tile(x.kind==='eka'?'spark':'doc',x.kind==='eka'?'v':'n'),h('div',{class:'grow'},h('b',null,x.name),h('span',{class:'d'},x.d)),
+      x.kind==='eka'?h('span',{class:'tag v'},'Eka source'):h('span',{class:'tag n'},'File'),
+      sw(a.kb.includes(x.id),x.name,v=>{a.kb=v?a.kb.concat(x.id):a.kb.filter(y=>y!==x.id);refreshCounts()}))));
+    return h('div',null,secHead('Knowledge base','Documents the agent reads before it answers: FAQs, care instructions, your own protocols.'),
+      h('label',{class:'drop'},I('upload',22),h('b',null,'Upload PDF, DOCX or XLSX'),h('span',null,'Each file gets a name you can refer to in the prompt'),
+        h('input',{type:'file',hidden:true,multiple:true,onchange:e=>{[...e.target.files].forEach(f=>{const id='u'+Date.now()+Math.random();KB.unshift({id,name:f.name,d:'Uploaded just now · '+Math.max(1,Math.round(f.size/1024))+' KB',kind:'file'});a.kb.push(id)});const b=$('#cbody');b.innerHTML='';b.append(section('kb'));refreshCounts();toast('Added to knowledge base')}})),el);
+  }
+  if(k==='data'){
+    const el=h('div',{class:'card'});
+    DATASETS.forEach(x=>{const prev=h('div',{class:'dsw',hidden:true},h('table',{class:'ds'},h('thead',null,h('tr',null,x.cols.map(c=>h('th',null,c)))),h('tbody',null,x.rows.map(r=>h('tr',null,r.map(c=>h('td',null,c)))))));
+      el.append(h('div',{class:'li'},tile('table','y'),h('div',{class:'grow'},h('b',null,x.name),h('span',{class:'d'},x.d)),
+        h('button',{class:'btn sm ghost',onclick:()=>{prev.hidden=!prev.hidden}},'Preview'),
+        sw(a.data.includes(x.id),x.name,v=>{a.data=v?a.data.concat(x.id):a.data.filter(y=>y!==x.id);refreshCounts()})),prev)});
+    return h('div',null,secHead('Datasets','Tables the agent looks up exact answers in: doctor timings, fees, lab prices, insurance panels.'),
+      h('label',{class:'drop'},I('upload',22),h('b',null,'Upload CSV or XLSX'),h('span',null,'First row is the column names'),
+        h('input',{type:'file',hidden:true,accept:'.csv,.xlsx',onchange:e=>{const f=e.target.files[0];if(!f)return;const id='d'+Date.now();DATASETS.unshift({id,name:f.name.replace(/\.\w+$/,''),d:'Uploaded just now',cols:['Column'],rows:[['Preview after processing']]});a.data.push(id);const b=$('#cbody');b.innerHTML='';b.append(section('data'));refreshCounts();toast('Dataset added')}})),el);
+  }
+  if(k==='skills')return h('div',null,secHead('Skills','Ready-made abilities the agent loads only when needed, so the prompt stays short.'),
+    h('div',{class:'feat-grid'},SKILLS.map(x=>{const lab=h('label',{class:'feat',style:'cursor:pointer;padding-right:15px','aria-pressed':String(a.skills.includes(x.id))},tile(x.icon,x.t),h('div',{class:'grow'},h('b',null,x.name),h('span',{class:'d'},x.d)),
+      sw(a.skills.includes(x.id),x.name,v=>{a.skills=v?a.skills.concat(x.id):a.skills.filter(y=>y!==x.id);lab.setAttribute('aria-pressed',String(v));refreshCounts()}));return lab})));
+  if(k==='playground'){
+    const opts=[h('option',{value:'draft'},'Draft (current)')].concat(
+      a.history.slice().reverse().map(e=>h('option',{value:'h'+a.history.indexOf(e)},vLabel(e)+' · '+e.date)));
+    const sel=h('select',{class:'sel',style:'max-width:320px'},opts);
+    const holder=h('div');
+    const paintChat=()=>{
+      holder.innerHTML='';
+      const key=sel.value;
+      if(key==='draft'){holder.append(chatWindow(a,false,null,true));return}
+      const idx=+key.slice(1),entry=a.history[idx],testA=clone(entry.snap);
+      holder.append(
+        h('div',{class:'banner',style:'margin-bottom:14px'},I('history',15),
+          h('span',{class:'t grow'},'Testing '+vLabel(entry)+' ('+entry.date+'). Your current draft is untouched.'),
+          h('button',{class:'btn sm pri',onclick:()=>{S.preLoad=snapOf(a);Object.assign(a,clone(entry.snap));S.loaded=vLabel(entry);sel.value='draft';render();toast(vLabel(entry)+' loaded as your draft','info')}},I('history',13),'Load as draft')),
+        chatWindow(testA,false,null,true));
+    };
+    sel.onchange=paintChat;paintChat();
+    return h('div',null,secHead('Playground','Try the agent exactly as a patient would. Switch versions any time — testing an old one never changes your current draft.'),
+      h('div',{class:'fld',style:'max-width:320px;margin-bottom:16px'},h('label',{class:'lbl'},'Version'),sel,
+        h('span',{class:'help'},a.history.length?a.history.length+' saved version'+(a.history.length===1?'':'s')+', newest first.':'No saved versions yet — save a draft or publish to start building history.')),
+      holder);
+  }
+  if(k==='model'){
+    const tv=h('b',null,String(a.temp));
+    const mark=key=>a[key]===OPT[key]?h('span',{class:'tag ok'},'Optimal'):h('button',{class:'link',onclick:()=>{a[key]=OPT[key];reSec('model')}},'Reset to optimal');
+    const allOpt=['model','temp','maxTok','itr'].every(x=>a[x]===OPT[x]);
+    const matches=p=>['model','temp','maxTok','itr'].every(x=>a[x]===p.vals[x]);
+    const activePreset=PRESETS.find(matches);
+    const presetCards=h('div',{class:'opts c3'},PRESETS.map(p=>h('button',{class:'opt','aria-pressed':String(p===activePreset),onclick:()=>{Object.assign(a,clone(p.vals));reSec('model')}},
+      h('b',null,p.label),h('span',{class:'d'},p.d),h('span',{class:'tick',html:ic('check',11,3)}))));
+    let advOpen=!activePreset;
+    const advBox=h('div',{class:'card pad stack',hidden:!advOpen,style:'gap:20px;margin-top:14px'},
+        h('div',{class:'banner'+(allOpt?' ok':''),style:'margin:0'},I(allOpt?'check':'chip',15,2.2),h('span',{class:'t grow'},h('b',{style:'color:var(--ink)'},a.model),' · Temp '+a.temp+' · Max tokens '+a.maxTok+' · Iterations '+a.itr),
+          allOpt?h('span',{class:'tag ok'},'Optimal'):h('button',{class:'btn sm',onclick:()=>{Object.assign(a,clone(OPT));reSec('model')}},'Reset all to optimal')),
+        h('div',{class:'fld',style:'max-width:420px'},h('div',{class:'row'},h('label',{class:'lbl grow'},'Model'),mark('model')),
+          h('select',{class:'sel',onchange:e=>{a.model=e.target.value;reSec('model')}},MODELS.map(([g,ms])=>h('optgroup',{label:g},ms.map(m=>h('option',{value:m,selected:a.model===m},m+(m===OPT.model?' · Optimal':''))))))),
+        h('div',{class:'g3'},
+          h('div',{class:'fld'},h('div',{class:'row'},h('span',{class:'lbl grow'},'Temperature'),tv),h('input',{type:'range',class:'range',min:0,max:1,step:.1,value:a.temp,oninput:e=>{a.temp=+e.target.value;tv.textContent=e.target.value},onchange:()=>reSec('model')}),h('div',null,mark('temp'))),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Max tokens'),h('input',{class:'inp',type:'number',value:a.maxTok,onchange:e=>{a.maxTok=+e.target.value;reSec('model')}}),h('div',null,mark('maxTok'))),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Max iterations'),h('input',{class:'inp',type:'number',value:a.itr,onchange:e=>{a.itr=+e.target.value;reSec('model')}}),h('div',null,mark('itr')))),
+        h('div',{class:'fld',style:'max-width:420px'},h('label',{class:'lbl'},'API key ',h('span',{class:'help'},'(optional)')),h('input',{class:'inp',type:'password',placeholder:'Enter api_key',value:a.apiKey,autocomplete:'off',oninput:e=>{a.apiKey=e.target.value}}),h('span',{class:'help'},'Leave empty to use Eka’s credits.')));
+    const advBtn=h('button',{class:'btn sm',style:'margin-top:16px'},I('sliders',13,2.4),h('span',null,advOpen?'Hide advanced settings':'Show advanced settings'));
+    advBtn.onclick=()=>{advOpen=!advOpen;advBox.hidden=!advOpen;advBtn.lastChild.textContent=advOpen?'Hide advanced settings':'Show advanced settings'};
+    return h('div',null,secHead('Model','Which language model runs the agent. Fast is the right default for most clinics.'),
+      presetCards,activePreset?null:h('p',{class:'help',style:'margin:12px 0 0'},'Custom settings — see Advanced below.'),advBtn,advBox);
+  }
+  if(k==='feedback'){
+    return h('div',null,secHead('Feedback form','Shown when a person closes the chat. Try it from Test.'),
+      h('div',{class:'card pad stack',style:'gap:18px'},
+        h('div',{class:'rowcard'},h('div',{class:'grow'},h('b',null,'Ask for feedback'),h('span',{class:'help'},'Shown when a user drops off a session')),sw(a.feedback.on,'Ask for feedback',v=>{a.feedback.on=v})),
+        h('div',{class:'g2'},h('div',{class:'fld'},h('label',{class:'lbl'},'Type'),h('select',{class:'sel',onchange:e=>{a.feedback.type=e.target.value}},[['rating','Rating (Poor → Excellent)'],['nps','NPS (0–10)']].map(([v,l])=>h('option',{value:v,selected:a.feedback.type===v},l)))),
+          h('div',{class:'fld'},h('label',{class:'lbl'},'Title'),h('input',{class:'inp',value:a.feedback.title,oninput:e=>{a.feedback.title=e.target.value}}))),
+        h('div',{class:'fld'},h('span',{class:'lbl'},'Options and scores'),h('div',{class:'chips'},[['Poor',1],['Average',4],['Good',6],['Excellent',10]].map(([l,s])=>h('span',{class:'tag n',style:'height:30px;padding:0 12px'},l+' · '+s))))));
+  }
+  if(k==='chat'){
+    const A=a.appearance,prev=h('div');
+    const paintPrev=()=>{prev.innerHTML='';const fake=Object.assign(clone(a),{greeting:a.greeting||'Hi! How can I help?'});prev.append(h('div',{style:'height:440px;display:flex'},chatWindow(fake,false)));prev.firstChild.firstChild.style.height='440px';prev.firstChild.firstChild.style.minHeight='0';prev.firstChild.firstChild.style.flex='1'};
+    const iconPick=(key,label,sub)=>h('div',{class:'fld'},h('span',{class:'lbl'},label,sub?h('span',{class:'help'},sub):null),h('div',{class:'row',style:'flex-wrap:wrap;gap:8px'},
+      ['bot','headset'].map(n=>h('button',{class:'thumb','aria-pressed':String(A[key]===n),style:A[key]===n?'border-color:var(--v);box-shadow:0 0 0 3px var(--v-50)':'',onclick:()=>{A[key]=n;rerender()}},I(n,22))),
+      h('button',{class:'btn sm',onclick:()=>toast('Upload opens the file picker in the console','info')},I('upload',13),'Upload'),h('button',{class:'btn sm',onclick:()=>toast('Paste an image URL in the console','info')},I('link',13),'URL')));
+    const color=(key,label,sub)=>h('div',{class:'fld'},h('span',{class:'lbl'},label),h('div',{class:'row'},h('input',{type:'color',class:'swatch',value:A[key],oninput:e=>{A[key]=e.target.value;e.target.nextSibling.value=e.target.value;paintPrev()}}),h('input',{class:'inp mono',value:A[key],style:'max-width:140px',oninput:e=>{if(/^#[0-9a-f]{6}$/i.test(e.target.value)){A[key]=e.target.value;e.target.previousSibling.value=e.target.value;paintPrev()}}})),h('span',{class:'help'},sub));
+    const rerender=()=>reSec('chat');
+    paintPrev();
+    return h('div',null,secHead('Chat window','How the chat looks, how to put it on your website, and how long chats are kept. The Test window uses these settings.'),
+      h('h3',{class:'subh'},'How it looks'),
+      h('div',{class:'apg'},
+        h('div',{class:'card pad stack',style:'gap:20px'},
+          h('div',{class:'g2'},iconPick('agentIcon','Agent icon'),iconPick('assistantIcon','Assistant icon','In-widget avatar')),
+          h('div',{class:'g2'},h('div',{class:'fld'},h('span',{class:'lbl'},'Title image ',h('span',{class:'help'},'(optional)')),h('input',{class:'inp',placeholder:'Image URL',value:A.titleImage,oninput:e=>{A.titleImage=e.target.value}}),h('span',{class:'help'},'Agent name is used if not set')),
+            h('div',{class:'fld'},h('span',{class:'lbl'},'Background'),h('select',{class:'sel',onchange:e=>{A.bg=e.target.value;paintPrev()}},[['soft','Soft violet'],['pastel','Pastel image'],['none','None']].map(([v,l])=>h('option',{value:v,selected:A.bg===v},l))))),
+          h('div',{class:'fld'},h('span',{class:'lbl'},'Text mode'),h('div',{class:'seg',style:'align-self:flex-start'},[['light','Light'],['dark','Dark']].map(([v,l])=>h('button',{'aria-pressed':String(A.textMode===v),onclick:()=>{A.textMode=v;rerender()}},l))),h('span',{class:'help'},'Match text colour to image brightness')),
+          h('div',{class:'g2'},color('accent','Accent colour','Buttons & interactive elements'),color('nudge','Nudge colour','Nudge & highlight elements')),
+          h('div',{class:'rowcard'},h('div',{class:'grow'},h('b',null,'Dark header'),h('span',{class:'help'},'Dark header with light background (default: light header)')),sw(A.darkHeader,'Dark header',v=>{A.darkHeader=v;paintPrev()}))),
+        h('div',null,h('div',{class:'lbl',style:'margin-bottom:8px'},'Preview'),prev)),
+      h('h3',{class:'subh next'},'On your website'),
+      h('div',{class:'card pad stack',style:'gap:18px'},
+        h('div',{class:'fld'},h('span',{class:'lbl'},'Embed code'),h('span',{class:'help'},'Paste this into your website once. The chat bubble appears on every page.'),h('pre',{class:'snip'},'<script src="https://widget.eka.care/v1/agent.js"\n  data-agent-id="'+(a.uid||'created on first save')+'"\n  async></'+'script>'),
+          h('div',null,h('button',{class:'btn sm',onclick:()=>copyText('<script src="https://widget.eka.care/v1/agent.js" data-agent-id="'+(a.uid||'')+'" async></'+'script>','Embed code copied')},I('copy',13),'Copy code'))),
+        h('div',{class:'fld',style:'max-width:320px'},h('label',{class:'lbl'},'Keep conversations for'),h('select',{class:'sel'},['30 days','90 days','180 days','1 year'].map((x,i)=>h('option',{selected:i===1},x))))));
+  }
+  if(k==='byoa')return h('div',null,secHead('Bring your own auth','Attach a shared secret to authenticate this agent’s sessions.',h('span',{class:'untouched'},'Same as console')),
+    h('div',{class:'card pad stack'},h('div',{class:'fld',style:'max-width:480px'},h('label',{class:'lbl'},'Shared secret'),h('span',{class:'help'},'The signed JWE is matched against the credential’s issuer. Choose “None” to unlink.'),
+      h('select',{class:'sel',onchange:e=>{a.byoa=e.target.value}},h('option',{value:'none'},'None — no shared secret')),h('span',{class:'help',style:'color:var(--warn)'},'No shared secrets in this workspace yet. ',h('button',{class:'link',onclick:()=>toast('Opens Settings → Shared secrets','info')},'Create one first.')))));
+
+}
+function toolList(a,onChange){
+  const card=h('div',{class:'card'});
+  SERVERS.forEach(s=>{
+    const keys=s.tools.map(t=>s.id+':'+t),on=keys.filter(x=>a.tools[x]).length;let open=on>0&&on<20;
+    const rows=h('div',{class:'trows',hidden:!open});
+    const cnt=h('span',{class:'tcount'},on+'/'+s.tools.length+' tools');
+    const head=h('div',{class:'li'},tile('server',on?'g':'n'),h('div',{class:'grow'},h('div',{class:'row',style:'gap:8px;flex-wrap:wrap'},h('b',null,s.name),h('span',{class:'tag ok'},'Predefined'),cnt),h('span',{class:'d'},s.sub)),
+      h('button',{class:'btn sm',onclick:e=>{open=!open;rows.hidden=!open;e.currentTarget.textContent=open?'Hide tools':'Choose tools'}},open?'Hide tools':'Choose tools'));
+    const tr=x=>{const t=x.split(':')[1];return h('div',{class:'tr'},h('div',{class:'grow'},h('div',{class:'tn'},t),h('div',{class:'td'},TDESC[t]||'')),
+      sw(!!a.tools[x],t,v=>{if(v)a.tools[x]='custom';else delete a.tools[x];const n=keys.filter(y=>a.tools[y]).length;cnt.textContent=n+'/'+s.tools.length+' tools';head.querySelector('.tile').style.cssText='background:'+TINT[n?'g':'n'][0]+';color:'+TINT[n?'g':'n'][1];onChange&&onChange()}))};
+    const onK=keys.filter(x=>a.tools[x]),offK=keys.filter(x=>!a.tools[x]);
+    if(onK.length){rows.append(h('div',{class:'tgrp'},'Switched on'));onK.forEach(x=>rows.append(tr(x)))}
+    if(offK.length){rows.append(h('div',{class:'tgrp'},onK.length?'Not switched on':'All tools'));offK.forEach(x=>rows.append(tr(x)))}
+    card.append(head,rows);
+  });
+  return card;
+}
+function addServer(){
+  modalBox('Connect an MCP server','Eka discovers the tools on the server after you connect.',h('div',{class:'stack'},
+    h('div',{class:'fld'},h('label',{class:'lbl'},'Name'),h('input',{class:'inp',placeholder:'e.g. Hospital HIS'})),
+    h('div',{class:'fld'},h('label',{class:'lbl'},'Server URL'),h('input',{class:'inp mono',placeholder:'https://'}))),
+    [['Cancel',''],['Connect','pri',()=>toast('Server added. Discovering tools…','info')]]);
+}
+function openTemplates(onUse){
+  const body=h('div',{class:'stack'});
+  const list=()=>{body.innerHTML='';body.append(...TEMPLATES.map(t=>h('button',{class:'tplc',onclick:()=>detail(t)},
+    h('div',{class:'top'},tile(t.icon,t.t),h('div',{class:'grow'},h('b',null,t.name),h('div',{class:'for'},t.who))),
+    h('p',null,t.purpose),
+    h('div',null,h('div',{class:'lbl',style:'margin-bottom:6px'},'Helps with'),h('ul',null,t.helps.map(x=>h('li',null,x)))),
+    h('span',{class:'go'},'See the prompt',I('arrowR',14,2.2)))))};
+  const detail=t=>{body.innerHTML='';body.append(h('div',{class:'tpld stack'},
+    h('button',{class:'btn sm ghost',style:'align-self:flex-start;margin-left:-8px',onclick:list},I('arrowL',14,2.2),'All templates'),
+    h('div',{class:'row'},tile(t.icon,t.t),h('div',{class:'grow'},h('b',{style:'color:var(--ink);font-size:16px'},t.name),h('div',{class:'help'},t.who))),
+    h('p',{style:'margin:0'},t.purpose),
+    h('div',{class:'lbl'},'The prompt it adds'),h('pre',null,t.body),
+    h('div',{class:'row'},h('span',{class:'help grow'},'You can edit everything after you use it.'),h('button',{class:'btn pri',onclick:()=>{closeModal();onUse(t.body);toast(t.name+' loaded')}},'Use this template'))))};
+  list();
+  modalBox('Build with templates','Pick what you want the agent to do. Open one to see its prompt.',body,[['Close','']],true);
+}
+
+/* ===================== answer the questions (brought back from v30) ===================== */
+const Q_DOCTORS=[{id:'d1',name:'Dr. Ananya Rao',spec:'Cardiology'},{id:'d2',name:'Dr. Vikram Shah',spec:'General Physician'},{id:'d3',name:'Dr. Meera Iyer',spec:'Paediatrics'},{id:'d4',name:'Dr. Arjun Nair',spec:'Orthopaedics'}];
+const Q_AUD={patients:{label:'Patients',text:'patients and their families'},doctors:{label:'Doctors',text:'doctors and clinical staff'},staff:{label:'Front-desk staff',text:'front-desk and clinic staff'}};
+const Q_TASKS=[
+ {id:'book',label:'Book appointments',icon:'cal',for:['patients','staff']},
+ {id:'abha',label:'ABHA & ABDM',icon:'shield',for:['patients','staff']},
+ {id:'records',label:'Fetch patient records',icon:'doc',for:['patients','doctors','staff']},
+ {id:'register',label:'Register patients',icon:'userplus',for:['staff']},
+ {id:'medicine',label:'Medicine information',icon:'pill',for:['doctors']},
+ {id:'guidelines',label:'Clinical guidelines',icon:'book',for:['doctors']},
+ {id:'calc',label:'Medical calculators',icon:'calc',for:['doctors']},
+ {id:'web',label:'Web search',icon:'search',for:[]}];
+const Q_TASK=Object.fromEntries(Q_TASKS.map(t=>[t.id,t]));
+const Q_PERSONAS={
+ friendly:{label:'Friendly',rule:'Warm and upbeat. Use simple everyday words and short sentences. Use the person’s first name once you know it.',sample:'Hi! I’m {name} from {clinic}. Happy to help you book a visit. Which day works for you?'},
+ professional:{label:'Professional',rule:'Polite, clear and to the point. Use complete sentences and a respectful tone. No slang or emojis.',sample:'Good morning. I’m {name}, the assistant for {clinic}. How may I help you today?'},
+ caring:{label:'Caring & empathetic',rule:'Gentle and reassuring. Acknowledge how the person feels before you help. Never rush them.',sample:'I’m sorry you’re not feeling well. I’m {name}, and I’ll help you see a doctor as soon as possible.'},
+ calm:{label:'Calm & reassuring',rule:'Steady and patient. Explain one step at a time and check the person is comfortable before moving on.',sample:'No problem at all, let’s take this one step at a time. I’m {name} from {clinic}.'},
+ brief:{label:'Short & efficient',rule:'Keep every reply to one or two lines. Offer clear choices instead of long explanations.',sample:'Hi, I’m {name}. Book a visit, check a report, or something else?'},
+ custom:{label:'Custom…',rule:'',sample:''}};
+const Q_SAFETY=[['diagnose','Never diagnose or prescribe','Suggests booking a doctor instead'],['emergency','Send emergencies to 108','Chest pain, breathlessness, heavy bleeding, fainting, self-harm'],['confirm','Confirm before acting','Reads back details before it books, changes, cancels or uploads'],['privacy','Protect patient privacy','Shares details only with the verified patient']];
+const Q_RECTYPES=[['lab','Lab reports'],['rx','Prescriptions'],['scan','Scans & imaging'],['discharge','Discharge summaries']];
+const Q_BODIES=['ICMR','RSSDI','API','ADA','WHO','ESH','KDIGO','IAP'];
+function blankAnswers(a){return{audience:a.aud||'patients',tasks:[],
+  d:{book:{doctors:['d1','d2'],window:7,resched:true,mobile:true},abha:{create:true,login:true,card:true},records:{verify:'otp',types:['lab','rx'],upload:false},
+     register:{email:false},medicine:{brand:true},guidelines:{bodies:['ICMR','RSSDI']},web:{cite:true},custom:{on:false,text:'',title:'',draft:'',vars:[],busy:false}},
+  persona:'friendly',personaCustom:'',safety:{diagnose:true,emergency:true,confirm:true,privacy:true},handover:''}}
+
+/* master prompt (lives in the backend) */
+const MASTER=`You are {{agent_name}}, the virtual assistant for {{clinic_name}}, built on Eka Care.
+You are talking to {{audience}}.
+
+## How you speak
+- {{persona}}
+- Always answer in the language the person writes in. Keep medicine names and numbers in English.
+
+## What you help with
+{{use_cases}}
+
+## Rules you always follow
+{{safety_rules}}
+- Never make up doctors, slots, records or medicine details. If a tool fails, say so and offer another way.
+
+## When you can't help
+If a request is outside what you help with, or the person asks for a human, share {{handover_contact}}.`;
+const BLOCKS={
+ book:`### Book appointments
+- Book only with these doctors: {{doctor_list}}.
+- Offer slots from today up to {{booking_window_days}} days ahead. Check free dates with get_available_dates and show them with doctor_availability_elicitation. Never guess a slot.
+{{identify_rule}}
+- Read the doctor, date and time back before you call book_appointment.
+{{reschedule_rule}}`,
+ abha:`### ABHA and ABDM
+- You can help with: {{abha_actions}}.
+- Use the mobile-OTP flow: abha_send_otp, then abha_verify_otp, then abha_select_profile if more than one profile comes back.
+- Never ask for an Aadhaar number in chat and never repeat an OTP back.
+{{abha_card_rule}}`,
+ records:`### Patient records
+- Before you show any record, verify the person with {{verify_method}}.
+- Share only these record types: {{record_types}}. List them with list_patient_records and open one with get_patient_record.
+{{upload_rule}}
+- Download links expire, so tell the person to save the file if they need it later.`,
+ register:`### Register patients
+- Before creating a profile, check for an existing one with search_patients or get_patient_by_mobile.
+- Always collect {{required_fields}}. Ask for anything missing; never assume it.
+- Create the profile with add_patient and read the details back.`,
+ medicine:`### Medicine information
+- Look up medicines with indian_branded_drug_search and indian_pharmacology_details. Answer only from what the tools return.
+{{brand_rule}}
+{{audience_medicine_rule}}`,
+ guidelines:`### Clinical guidelines
+- Ground every clinical answer in indian_treatment_protocol_search, even if you know the answer.
+- Prefer these guideline bodies: {{guideline_bodies}}. Name the body and year in your answer.`,
+ calc:`### Medical calculators
+- Use medical_calculator_list, then medical_calculator_input, then medical_calculator_output. Never work out a score in your head.
+- If a required value is missing, ask for it.`,
+ web:`### Web search
+- Use web_search_preview for anything recent or not covered by Eka tools, and web_fetch to read a page.
+{{cite_rule}}`,
+ custom:`### {{custom_title}}
+{{custom_instructions}}`};
+const qHas=(A,id)=>id==='custom'?A.d.custom.on:A.tasks.includes(id);
+const qActive=A=>A.tasks.concat(A.d.custom.on?['custom']:[]);
+function qValues(a){
+  const A=a.qa.A,d=A.d,clinic=a.clinic.trim()||'our clinic',handover=A.handover.trim()||'the clinic front desk’s contact details';
+  const docs=Q_DOCTORS.filter(x=>d.book.doctors.includes(x.id)).map(x=>x.name+' ('+x.spec+')');
+  const acts=[];if(d.abha.create)acts.push('creating a new ABHA');if(d.abha.login)acts.push('logging in to an existing ABHA');
+  const types=Q_RECTYPES.filter(r=>d.records.types.includes(r[0])).map(r=>r[1].toLowerCase());
+  const safety=[];
+  if(A.safety.diagnose)safety.push(A.audience==='doctors'?'- You support doctors. The final clinical decision is always theirs; never present an answer as a diagnosis.':'- Never diagnose or prescribe. For medical advice, suggest booking a visit with a doctor.');
+  if(A.safety.emergency)safety.push('- If someone mentions chest pain, trouble breathing, heavy bleeding, fainting or thoughts of self-harm, tell them to call 108 or go to the nearest emergency room straight away, and stop the current flow.');
+  if(A.safety.confirm)safety.push('- Confirm with the person before you book, change, cancel or upload anything.');
+  if(A.safety.privacy)safety.push('- Share details only with the verified patient. Never reveal another patient’s information.');
+  const cv=d.custom.vars.filter(v=>v.name.trim());
+  return{
+    agent_name:a.name.trim()||'the assistant',clinic_name:clinic,audience:Q_AUD[A.audience].text,
+    persona:A.persona==='custom'?(A.personaCustom.trim()||'Warm and professional.'):Q_PERSONAS[A.persona].rule,
+    safety_rules:safety.join('\n')||'- Follow the clinic’s policies.',handover_contact:handover,
+    doctor_list:docs.length?list(docs):'any doctor in the workspace (find them with get_business_entities)',
+    booking_window_days:String(d.book.window||7),
+    identify_rule:d.book.mobile?'- Ask for the patient’s mobile number and find them with get_patient_by_mobile. If they are new, collect full name, date of birth and gender and register them with add_patient.':'- Ask for the patient’s full name and mobile number before booking.',
+    reschedule_rule:d.book.resched?'- Patients may reschedule or cancel. Use reschedule_appointment or cancel_appointment only after they confirm.':'- Do not reschedule or cancel. For changes, share '+handover+'.',
+    abha_actions:acts.length?list(acts):'answering questions about ABHA',
+    abha_card_rule:d.abha.card?'- After login, tell the person their ABHA card is ready to download.':'- Do not share the ABHA card in chat.',
+    verify_method:d.records.verify==='otp'?'a one-time password sent to their registered mobile (authentication_elicitation)':'their registered mobile number and date of birth',
+    record_types:types.length?list(types):'lab reports',
+    upload_rule:d.records.upload?'- The person may upload a report (PDF, JPG or PNG, up to 5 MB). Save it with upload_patient_record.':'- Do not accept uploads in chat.',
+    required_fields:'full name, date of birth, gender and mobile number'+(d.register.email?' and email':''),
+    brand_rule:d.medicine.brand?'- Reply with the brand name the person used, not only the generic.':'- Reply with generic names.',
+    audience_medicine_rule:A.audience==='doctors'?'- Include dose, contraindications and pregnancy safety when relevant.':'- Explain uses and common side effects in plain words. Never suggest a dose change; tell the person to follow their doctor’s prescription.',
+    guideline_bodies:d.guidelines.bodies.length?list(d.guidelines.bodies):'any recognised body',
+    cite_rule:d.web.cite?'- Name the website you used at the end of each answer.':'- Summarise in your own words.',
+    custom_title:d.custom.title||'Custom task',
+    custom_instructions:(d.custom.draft||'- '+d.custom.text)+(cv.length?'\n- Use these values:\n'+cv.map(x=>'  - '+x.name.trim()+': '+(x.value||'(asked during the chat)')+(x.does?' ('+x.does+')':'')).join('\n'):'')};
+}
+function qFill(tpl,v){let s=tpl;for(let i=0;i<2;i++)s=s.replace(/\{\{(\w+)\}\}/g,(m,k)=>v[k]!=null?v[k]:m);return s.split('\n').filter(l=>l.trim()!=='').join('\n').replace(/\n(#{2,3} )/g,'\n\n$1')}
+function qBuild(a){
+  const v=qValues(a),c=a.qa.A.d.custom;
+  v.use_cases=qActive(a.qa.A).map(t=>qFill(BLOCKS[t],v)).join('\n\n');
+  return qFill(MASTER,v).replace(/\{\{(\w+)\}\}/g,(m,k)=>{const x=c.vars.find(y=>y.name===k);return x&&x.value?x.value:m});
+}
+function qFilledRows(a){
+  const v=qValues(a),A=a.qa.A,r=[['agent_name',v.agent_name],['clinic_name',v.clinic_name],['audience',Q_AUD[A.audience].label],
+    ['persona',A.persona==='custom'?'Custom':Q_PERSONAS[A.persona].label]];
+  if(qHas(A,'book'))r.push(['doctor_list',v.doctor_list],['booking_window_days',v.booking_window_days+' days'],['reschedule_rule',A.d.book.resched?'Allowed':'Not allowed']);
+  if(qHas(A,'abha'))r.push(['abha_actions',v.abha_actions]);
+  if(qHas(A,'records'))r.push(['verify_method',A.d.records.verify==='otp'?'Mobile OTP':'Mobile + date of birth'],['record_types',v.record_types]);
+  if(qHas(A,'guidelines'))r.push(['guideline_bodies',v.guideline_bodies]);
+  if(qHas(A,'custom'))A.d.custom.vars.filter(x=>x.name.trim()).forEach(x=>r.push([x.name.trim(),x.value||'(asked during the chat)']));
+  r.push(['handover_contact',v.handover_contact]);
+  return r;
+}
+function showMaster(){
+  const hl=t=>t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\{\{(\w+)\}\}/g,'<span class="pv">{{$1}}</span>');
+  modalBox('Eka master prompt','One template lives in the backend. Each use case adds its own block. Orange text is a placeholder filled from the answers.',
+    h('div',{class:'stack'},h('pre',{class:'mcode',html:hl(MASTER)}),h('b',{style:'color:var(--ink);font-size:14px'},'Example block: Book appointments'),h('pre',{class:'mcode',html:hl(BLOCKS.book)})),[['Close','pri']],true);
+}
+let QD=null;
+function openQA(){
+  if(QD)return;const a=S.a;
+  if(!a.qa)a.qa={A:blankAnswers(a),written:false,edited:false,generated:''};
+  const sc=h('div',{class:'qd-scrim',onclick:closeQA});
+  const dr=h('aside',{class:'qd',role:'dialog','aria-modal':'true','aria-label':'Answer questions to write the prompt'});
+  document.body.append(sc,dr);QD={sc,dr};
+  paintQD();
+  requestAnimationFrame(()=>{sc.classList.add('in');dr.classList.add('in')});
+  document.addEventListener('keydown',qdEsc);
+}
+function qdEsc(e){if(e.key==='Escape'&&QD&&!$('.modal'))closeQA()}
+function closeQA(){
+  if(!QD)return;const {sc,dr}=QD;QD=null;
+  sc.classList.remove('in');dr.classList.remove('in');document.removeEventListener('keydown',qdEsc);
+  setTimeout(()=>{sc.remove();dr.remove()},320);
+}
+function qdCan(){const a=S.a,A=a.qa.A;return !!(a.name.trim()&&(A.tasks.length||(A.d.custom.on&&(A.d.custom.text.trim()||A.d.custom.draft.trim()))))}
+function qdProgress(){
+  if(!QD)return;const a=S.a,A=a.qa.A;
+  const st=[a.name.trim()&&a.clinic.trim(),1,A.tasks.length||A.d.custom.on,A.persona!=='custom'||A.personaCustom.trim(),1];
+  const n=st.filter(Boolean).length;
+  QD.dr.querySelector('.qd-prog i').style.width=(n/5*100)+'%';
+  QD.dr.querySelector('#qdCount').textContent=n+' of 5 answered';
+  QD.dr.querySelector('#qdWrite').disabled=!qdCan();
+  QD.dr.querySelectorAll('.qd-n').forEach((e,i)=>e.classList.toggle('done',!!st[i]));
+}
+function qdRepaint(){const b=QD&&QD.dr.querySelector('.qd-b');const y=b?b.scrollTop:0;paintQD();const nb=QD.dr.querySelector('.qd-b');if(nb)nb.scrollTop=y}
+function qdPersona(){const a=S.a,p=Q_PERSONAS[a.qa.A.persona];return '“'+p.sample.replace('{name}',a.name.trim()||'Maya').replace('{clinic}',a.clinic.trim()||'Sunrise Clinic')+'”'}
+function paintQD(){
+  const dr=QD.dr,a=S.a,A=a.qa.A;dr.innerHTML='';
+  const q=(n,title,sub,...body)=>h('section',{class:'qd-q'},h('div',{class:'qd-qh'},h('span',{class:'qd-n'},String(n)),h('div',null,h('h3',null,title),sub?h('p',null,sub):null)),h('div',{class:'qd-qb'},body));
+  const tg=(title,sub,get,set)=>h('label',{class:'qd-tg'},h('div',{class:'grow'},h('b',null,title),sub?h('span',null,sub):null),h('span',{class:'sw'},h('input',{type:'checkbox',checked:get(),onchange:e=>{set(e.target.checked);qdProgress()}}),h('i')));
+  const fl=(label,v,what,...ctl)=>h('div',{class:'qd-fl'},h('div',{class:'top'},h('b',null,label),v?h('span',{class:'qd-var'},'{{'+v+'}}'):null),what?h('div',{class:'help'},what):null,ctl);
+  const chip=(on,label,icon,click,extra)=>h('button',{type:'button',class:'qd-chip','aria-pressed':String(!!on),onclick:click},h('span',{class:'ck',html:ic('check',13,2.6)}),icon?I(icon,15):null,label,extra||null);
+  const prevLine=()=>{const p=$('#qdPrev');if(p)p.lastChild.textContent=qdPersona()};
+  const body=h('div',{class:'qd-b'},
+    q(1,'Name your assistant','Patients see this name in chat.',
+      h('div',{class:'qd-g2'},
+        fl('Agent name','agent_name',null,h('input',{class:'inp',type:'text',value:a.name,placeholder:'e.g. Maya',oninput:e=>{a.name=e.target.value;const t=$('#ctitle');if(t)t.textContent=a.name||'Untitled agent';qdProgress();prevLine();const t2=dr.querySelector('.qd-h h2');if(t2)t2.textContent='Let’s write '+(a.name.trim()||'your agent')+'’s prompt'}})),
+        fl('Clinic or hospital','clinic_name',null,h('input',{class:'inp',type:'text',value:a.clinic,placeholder:'e.g. Sunrise Clinic, Pune',oninput:e=>{a.clinic=e.target.value;qdProgress();prevLine()}})))),
+    q(2,'Who will chat with it?','We suggest use cases and set the tone for this audience.',
+      h('div',{class:'seg',role:'group',style:'align-self:flex-start'},Object.entries(Q_AUD).map(([k,v])=>h('button',{type:'button','aria-pressed':String(A.audience===k),onclick:()=>{A.audience=k;qdRepaint()}},v.label)))),
+    q(3,'What should it do?','Pick one or more. Each one adds its own instructions to the prompt.',
+      h('div',{class:'qd-chips'},Q_TASKS.map(t=>chip(A.tasks.includes(t.id),t.label,t.icon,()=>{A.tasks=A.tasks.includes(t.id)?A.tasks.filter(x=>x!==t.id):A.tasks.concat(t.id);qdRepaint()},
+          t.for.includes(A.audience)&&!A.tasks.includes(t.id)?h('span',{class:'sdot',title:'Suggested for '+Q_AUD[A.audience].label}):null)),
+        chip(A.d.custom.on,'Custom','wand',()=>{A.d.custom.on=!A.d.custom.on;qdRepaint()})),
+      h('div',{class:'help'},h('span',{class:'qd-chip static',style:'padding:0;border:0;background:none'},h('span',{class:'sdot'})),' Suggested for '+Q_AUD[A.audience].label.toLowerCase()),
+      A.tasks.map(t=>qdTask(t,fl,tg)),
+      A.d.custom.on?qdCustom(fl):null),
+    q(4,'What personality should it have?',null,
+      h('select',{class:'sel','aria-label':'Personality',onchange:e=>{A.persona=e.target.value;qdRepaint()}},Object.entries(Q_PERSONAS).map(([k,v])=>h('option',{value:k,selected:A.persona===k},v.label))),
+      A.persona==='custom'?h('textarea',{class:'ta',rows:3,placeholder:'Describe how it should talk. e.g. Speaks like a senior nurse: warm, firm about safety, uses simple Hindi words.',value:A.personaCustom,oninput:e=>{A.personaCustom=e.target.value;qdProgress()}})
+        :h('div',{class:'qd-prev',id:'qdPrev'},h('small',null,'How it will sound'),qdPersona())),
+    q(5,'Safety rules','Eka’s defaults for health agents. All are on.',
+      Q_SAFETY.map(([k,t,sub])=>tg(t,sub,()=>A.safety[k],v=>A.safety[k]=v)),
+      fl('When it can’t help, send people to','handover_contact','A phone number, desk or link shared when a request is out of scope.',
+        h('input',{class:'inp',type:'text',value:A.handover,placeholder:'e.g. Front desk, +91 20 4000 1234',oninput:e=>{A.handover=e.target.value}}))));
+  dr.append(
+    h('div',{class:'qd-h'},h('span',{class:'tile',html:ic('wand',20)}),h('div',{class:'grow'},
+      h('h2',null,'Let’s write '+(a.name.trim()||'your agent')+'’s prompt'),
+      h('p',null,'Five quick questions. Eka fills its master prompt from your answers with AI. You choose the tools yourself in Tools.'),
+      h('div',{class:'qd-prog'},h('i'))),
+      h('button',{class:'icon-btn',type:'button','aria-label':'Close',html:ic('x',16),onclick:closeQA})),
+    body,
+    h('div',{class:'qd-f'},h('span',{class:'grow help',id:'qdCount'}),
+      h('button',{class:'btn',type:'button',onclick:closeQA},'Cancel'),
+      h('button',{class:'btn pri',type:'button',id:'qdWrite',onclick:qdWrite},I('wand',15),a.qa.written?'Rewrite my prompt':'Write my prompt')));
+  qdProgress();
+}
+function qdTask(id,fl,tg){
+  const A=S.a.qa.A,d=A.d,t=Q_TASK[id];
+  const chip=(on,label,click)=>h('button',{type:'button',class:'qd-chip','aria-pressed':String(!!on),onclick:click},h('span',{class:'ck',html:ic('check',13,2.6)}),label);
+  const box=(...kids)=>h('div',{class:'qd-task'},h('div',{class:'qd-taskh'},I(t.icon,16),h('b',{class:'grow'},t.label),h('span',{class:'help'},'Details')),h('div',{class:'qd-taskb'},kids));
+  if(id==='book')return box(
+    fl('Which doctors can it book?','doctor_list','From your Eka workspace. Only these doctors are offered.',
+      h('div',{class:'qd-docs'},Q_DOCTORS.map(x=>h('label',{class:'qd-doc'},h('input',{type:'checkbox',checked:d.book.doctors.includes(x.id),onchange:e=>{d.book.doctors=e.target.checked?d.book.doctors.concat(x.id):d.book.doctors.filter(y=>y!==x.id)}}),h('span',{class:'grow'},x.name),h('small',null,x.spec))))),
+    fl('How far ahead can patients book?','booking_window_days','The latest date the agent offers.',
+      h('div',{class:'inline'},h('input',{class:'inp',type:'number',min:'1',max:'90',value:d.book.window,style:'max-width:90px',oninput:e=>{d.book.window=parseInt(e.target.value,10)||7}}),h('span',{class:'help'},'days'))),
+    tg('Let patients reschedule or cancel','They can move or cancel a booking after confirming',()=>d.book.resched,v=>d.book.resched=v),
+    tg('Find patients by mobile number','New patients are registered during booking',()=>d.book.mobile,v=>d.book.mobile=v));
+  if(id==='abha')return box(
+    tg('Create a new ABHA','Mobile OTP flow',()=>d.abha.create,v=>d.abha.create=v),
+    tg('Log in to an existing ABHA','Mobile OTP, then pick a profile',()=>d.abha.login,v=>d.abha.login=v),
+    tg('Share the ABHA card','Offers the card after login',()=>d.abha.card,v=>d.abha.card=v));
+  if(id==='records')return box(
+    fl('How should it verify the patient?','verify_method','Checked before any record is shown.',
+      h('div',{class:'seg',style:'align-self:flex-start'},[['otp','Mobile OTP'],['dob','Mobile + date of birth']].map(([k,l])=>h('button',{type:'button','aria-pressed':String(d.records.verify===k),onclick:()=>{d.records.verify=k;qdRepaint()}},l)))),
+    fl('Which records can it share?','record_types',null,h('div',{class:'qd-chips'},Q_RECTYPES.map(([k,l])=>chip(d.records.types.includes(k),l,()=>{d.records.types=d.records.types.includes(k)?d.records.types.filter(x=>x!==k):d.records.types.concat(k);qdRepaint()})))),
+    tg('Let patients upload reports','PDF, JPG or PNG up to 5 MB, saved to their vault',()=>d.records.upload,v=>d.records.upload=v));
+  if(id==='register')return box(
+    fl('Always collected',null,'Name, date of birth, gender and mobile are required by the Eka EMR.',h('div',{class:'qd-chips'},['Full name','Date of birth','Gender','Mobile'].map(x=>h('span',{class:'qd-chip static','aria-pressed':'true'},I('lock',13),x)))),
+    tg('Also ask for email',null,()=>d.register.email,v=>d.register.email=v));
+  if(id==='medicine')return box(
+    tg('Answer with Indian brand names','e.g. “Dolo 650” rather than only “paracetamol”',()=>d.medicine.brand,v=>d.medicine.brand=v),
+    h('div',{class:'help'},A.audience==='doctors'?'For doctors it includes dose, contraindications and pregnancy safety.':'For patients it explains uses and side effects and never changes a dose.'));
+  if(id==='guidelines')return box(fl('Preferred guideline bodies','guideline_bodies','Named in every answer.',
+    h('div',{class:'qd-chips'},Q_BODIES.map(b=>chip(d.guidelines.bodies.includes(b),b,()=>{d.guidelines.bodies=d.guidelines.bodies.includes(b)?d.guidelines.bodies.filter(x=>x!==b):d.guidelines.bodies.concat(b);qdRepaint()})))));
+  if(id==='calc')return box(h('div',{class:'help'},'Nothing to set. It finds the right calculator, asks for missing values and never does the maths in its head.'));
+  if(id==='web')return box(tg('Show the source with every answer',null,()=>d.web.cite,v=>d.web.cite=v));
+  return null;
+}
+function qdCustom(fl){
+  const c=S.a.qa.A.d.custom;
+  return h('div',{class:'qd-ai'},
+    h('div',{class:'inline'},I('wand',16),h('b',{class:'grow',style:'color:var(--v-dark)'},'Custom task'),h('span',{class:'tag v'},'AI assisted')),
+    fl('Describe it in your own words',null,'Write it like you’d explain it to a new receptionist.',
+      h('textarea',{class:'ta',rows:3,placeholder:'e.g. Remind patients about their follow-up visit a week after their appointment and tell them our consultation fee.',value:c.text,oninput:e=>{c.text=e.target.value;qdProgress()}})),
+    h('div',{class:'inline'},h('button',{class:'btn sm',type:'button',disabled:c.busy,onclick:qdDraftCustom},c.busy?h('span',{class:'qd-ring',style:'width:14px;height:14px;border-width:2px'}):I('wand',14),c.draft?'Rewrite with AI':'Turn into instructions'),
+      h('span',{class:'help'},'An LLM turns your words into clear instructions and suggests variables.')),
+    c.draft?fl('Instructions',null,'Edit freely. This block goes into the prompt as is.',
+      h('input',{class:'inp',type:'text',value:c.title,style:'font-weight:600',oninput:e=>{c.title=e.target.value}}),
+      h('textarea',{class:'ta',rows:6,value:c.draft,style:'font-size:13px',oninput:e=>{c.draft=e.target.value}})):null,
+    c.draft||c.vars.length?fl('Variables',null,'Values the agent needs for this task: a name, what it does, and the value. Leave the value empty if the agent should ask for it in chat.',
+      h('div',{class:'stack',style:'gap:8px'},c.vars.map((v,i)=>h('div',{class:'qd-vr'},
+        h('input',{class:'inp mono',type:'text',placeholder:'variable_name',value:v.name,oninput:e=>{v.name=e.target.value.replace(/[^A-Za-z0-9_]/g,'_')}}),
+        h('input',{class:'inp',type:'text',placeholder:'What it does',value:v.does,oninput:e=>{v.does=e.target.value}}),
+        h('input',{class:'inp',type:'text',placeholder:'Value',value:v.value,oninput:e=>{v.value=e.target.value}}),
+        h('button',{class:'icon-btn',type:'button','aria-label':'Remove variable',html:ic('trash',15),onclick:()=>{c.vars.splice(i,1);qdRepaint()}}))),
+        h('div',null,h('button',{class:'btn sm',type:'button',onclick:()=>{c.vars.push({name:'',does:'',value:''});qdRepaint()}},I('plus',14),'Add variable')))):null,
+    h('div',{class:'help'},'Choose the tools this task needs in Tools.'));
+}
+function qdDraftCustom(){
+  const c=S.a.qa.A.d.custom;
+  if(!c.text.trim()){toast('Describe the task first','info');return}
+  c.busy=true;qdRepaint();
+  setTimeout(()=>{
+    const t=c.text.trim(),lo=t.toLowerCase();let title,vars=[];
+    if(/remind|follow/.test(lo)){title='Follow-up reminders';vars.push({name:'followup_days',does:'Days after a visit to send the reminder',value:'7'})}
+    else if(/fee|price|cost|charge/.test(lo))title='Fees and charges';
+    else if(/hour|timing|open|address|direction/.test(lo))title='Clinic information';
+    else title=t.split(/\s+/).slice(0,4).join(' ').replace(/^./,m=>m.toUpperCase());
+    if(/fee|price|cost|charge/.test(lo))vars.push({name:'consultation_fee',does:'Fee to quote to patients',value:'₹600'});
+    if(/hour|timing|open/.test(lo))vars.push({name:'clinic_hours',does:'Opening hours to share',value:'Mon–Sat, 9 am – 8 pm'});
+    if(/address|direction|location/.test(lo))vars.push({name:'clinic_address',does:'Address to share',value:''});
+    if(!vars.length)vars.push({name:'key_detail',does:'Anything the agent must mention',value:''});
+    const lines=['- Goal: '+t.replace(/\.$/,'')+'.','- Ask one question at a time and only for what you need.','- Read the details back and confirm before you act.'];
+    vars.forEach(v=>lines.push('- Use {{'+v.name+'}} for '+v.does.charAt(0).toLowerCase()+v.does.slice(1)+'.'));
+    lines.push('- If this needs Eka data, use the tools turned on for this agent.');
+    c.title=title;c.draft=lines.join('\n');vars.forEach(v=>{if(!c.vars.find(x=>x.name===v.name))c.vars.push(v)});
+    c.busy=false;if(QD)qdRepaint();
+  },1300);
+}
+function qdWrite(){
+  if(!qdCan())return;
+  const a=S.a,D=a.qa;
+  const run=()=>{
+    if(!QD)return;
+    const dr=QD.dr,n=qActive(D.A).length;
+    const steps=['Reading your answers','Filling Eka’s master prompt','Adding '+n+' use case'+(n===1?'':'s'),'Adding safety rules'];
+    const ol=h('ol',null,steps.map(x=>h('li',null,I('check',12,2.6),x)));
+    dr.append(h('div',{class:'qd-writing'},h('div',{class:'qd-ring'}),h('b',{style:'color:var(--ink);font-size:16px'},'Writing '+(a.name.trim()||'your agent')+'’s prompt'),ol));
+    [...ol.children].forEach((li,i)=>setTimeout(()=>li.classList.add('on'),300+i*380));
+    setTimeout(()=>{
+      const p=qBuild(a);a.prompt=p;D.generated=p;D.written=true;D.edited=false;a.promptEdited=true;a.aud=D.A.audience;
+      D.A.d.custom.vars.filter(v=>v.name.trim()&&!v.value&&p.includes('{{'+v.name.trim()+'}}')).forEach(v=>{if(!a.vars.includes(v.name.trim()))a.vars.push(v.name.trim())});
+      closeQA();S.sec='prompt';reSec('prompt');$$('.cnav button').forEach(x=>x.classList.toggle('on',x.dataset.k==='prompt'));
+      if(S.view==='wizard')refreshFoot();else{const f=$('.wfoot');if(f)f.replaceWith(cfgFoot())}
+      toast('Your prompt is ready. Next, choose its tools.');
+    },300+steps.length*380+300);
+  };
+  if(a.prompt.trim()&&a.prompt!==D.generated)confirmBox('Replace your current prompt?','Eka rewrites the prompt from your answers. The text in the editor now is replaced.','Replace',run);
+  else run();
+}
+
+/* ===================== version history ===================== */
+const VF=[['Agent name',s=>s.name],['Welcome message',s=>s.greeting],['Quick replies',s=>(s.quickReplies||[]).filter(Boolean).join(', ')],['Input types',s=>INPUTS.filter(([k])=>s.inputs&&s.inputs[k]).map(x=>x[1]).join(', ')],['Idle expiry',s=>s.idle+' min'],
+ ['Talks to',s=>AUD[s.aud].label],['Personality',s=>PERSONA[s.persona].label],['Features',s=>(s.features||[]).map(f=>FEAT[f].short).join(', ')],
+ ['System prompt',s=>s.prompt,'long'],['Variables',s=>(s.vars||[]).map(v=>'{{'+v+'}}').join(' ')],
+ ['Tools',s=>Object.keys(s.tools||{}).length+' on'],['Knowledge base',s=>(s.kb||[]).map(k=>(KB.find(x=>x.id===k)||{name:k}).name).join(', ')],['Datasets',s=>(s.data||[]).map(k=>(DATASETS.find(x=>x.id===k)||{name:k}).name).join(', ')],['Skills',s=>(s.skills||[]).map(k=>(SKILLS.find(x=>x.id===k)||{name:k}).name).join(', ')],
+ ['Model',s=>s.model],['Temperature',s=>String(s.temp)],['Max tokens',s=>String(s.maxTok)],['Feedback form',s=>s.feedback.on?s.feedback.title:'Off'],['Appearance',s=>'Accent '+s.appearance.accent+' · '+(s.appearance.darkHeader?'dark':'light')+' header']];
+function diff(a,b){return VF.map(([l,f,t])=>({l,t,a:a?f(a):'',b:f(b)})).filter(r=>r.a!==r.b)}
+const vLabel=e=>e.kind==='published'?'v'+e.v:'Draft '+e.d;
+function openHistory(a){
+  const {d,close}=drawer('Version history',true);
+  const paintList=()=>{d.innerHTML='';
+    d.append(h('p',{class:'help',style:'margin:0 0 8px'},a.name+' · '+a.version+' published version'+(a.version===1?'':'s')+'. Select one to see what changed.'));
+    const L=h('div',{class:'vlist'});
+    a.history.map((e,i)=>({e,i})).reverse().forEach(({e,i})=>{
+      const prev=a.history[i-1],ch=diff(prev?prev.snap:null,e.snap),isLive=e.kind==='published'&&e.v===a.version;
+      L.append(h('button',{class:'ve',onclick:()=>paintDetail(i)},h('span',{class:'dot'+(isLive?' live':'')}),h('div',{class:'grow'},
+        h('div',{class:'row',style:'gap:6px;flex-wrap:wrap'},h('span',{class:'tag '+(e.kind==='published'?'v':'dr')},vLabel(e)),isLive?h('span',{class:'tag ok'},'Live now'):null,h('span',{class:'grow'}),h('span',{class:'help'},e.date+' · '+e.time)),
+        h('div',{style:'margin-top:4px;color:var(--ink);font-size:13.5px'},i===0?'First version':ch.length?'Changed: '+ch.slice(0,4).map(r=>r.l).join(', ')+(ch.length>4?' +'+(ch.length-4):''):'No changes'),
+        h('div',{class:'d'},(e.kind==='published'?'Published':'Saved as a draft')+' by '+e.by+(e.note?' · '+e.note:''))),I('arrowR',15)))});
+    d.append(L)};
+  const paintDetail=i=>{const e=a.history[i],prev=a.history[i-1],ch=diff(prev?prev.snap:null,e.snap),unch=VF.filter(([l])=>!ch.find(r=>r.l===l)).map(x=>x[0]);
+    d.innerHTML='';
+    d.append(h('button',{class:'btn sm ghost',style:'margin-left:-8px',onclick:paintList},I('arrowL',14,2.2),'All versions'),
+      h('div',{class:'row',style:'margin:10px 0 2px;flex-wrap:wrap'},h('h3',null,vLabel(e)),h('span',{class:'help'},e.date+' · '+e.time+' · '+e.by)),
+      h('p',{class:'help',style:'margin:0 0 6px'},i===0?'The first saved version.':'Compared with '+vLabel(prev)+'.'),
+      ch.length&&i>0?h('div',{class:'diff'},ch.map(r=>h('div',{class:'dr'},h('b',null,r.l),h('div',null,r.t==='long'?longDiff(r.a,r.b):[h('del',null,r.a||'empty'),' → ',h('ins',null,r.b||'empty')])))):null,
+      h('p',{class:'help',style:'margin:12px 0'},h('b',{style:'color:var(--g700)'},'Unchanged: '),i===0?'—':unch.join(', ')),
+      h('div',{class:'row',style:'flex-wrap:wrap'},h('button',{class:'btn pri sm',onclick:()=>{S.preLoad=snapOf(a);Object.assign(a,clone(e.snap));S.loaded=vLabel(e);close();S.view='config';render();toast(vLabel(e)+' loaded','info')}},I('history',13),'Load this version'),
+        h('button',{class:'btn sm',onclick:()=>{close();duplicate(a,e.snap,vLabel(e))}},I('copy',13),'Duplicate as new agent')))};
+  paintList();
+}
+function longDiff(x,y){const A=(x||'').split('\n'),B=(y||'').split('\n'),add=B.filter(l=>!A.includes(l)&&l.trim()),rem=A.filter(l=>!B.includes(l)&&l.trim());
+  return h('div',{class:'stack',style:'gap:4px'},h('span',{class:'help'},'+'+add.length+' lines · −'+rem.length+' lines'),add.slice(0,3).map(l=>h('ins',{style:'display:block'},l)),rem.slice(0,2).map(l=>h('del',{style:'display:block'},l)))}
+
+/* ===================== overlays ===================== */
+function drawer(title,wide){
+  const sc=h('div',{class:'scrim'}),dr=h('aside',{class:'drawer'+(wide?' wide':''),role:'dialog','aria-modal':'true','aria-label':title});
+  const d=h('div',{class:'db'});
+  const close=()=>{sc.classList.remove('on');dr.classList.remove('on');document.removeEventListener('keydown',esc);setTimeout(()=>{sc.remove();dr.remove()},350)};
+  const esc=e=>{if(e.key==='Escape'&&!$('.modal'))close()};
+  sc.onclick=close;document.addEventListener('keydown',esc);
+  dr.append(h('div',{class:'dh'},h('h3',{class:'grow'},title),h('button',{class:'icon-btn','aria-label':'Close',onclick:close},I('x',16,2.4))),d);
+  document.body.append(sc,dr);requestAnimationFrame(()=>{sc.classList.add('on');dr.classList.add('on')});
+  return{d,dr,close};
+}
+function openTest(a){
+  if(!ready(a)){toast('Add a name, prompt and model to test','info');return}
+  const sc=h('div',{class:'scrim'}),dr=h('aside',{class:'drawer full',role:'dialog','aria-modal':'true','aria-label':'Test '+a.name});
+  const close=()=>{sc.classList.remove('on');dr.classList.remove('on');setTimeout(()=>{sc.remove();dr.remove()},350)};
+  sc.onclick=close;dr.append(chatWindow(a,true,close,true));
+  document.body.append(sc,dr);requestAnimationFrame(()=>{sc.classList.add('on');dr.classList.add('on')});
+}
+function modalBox(title,sub,body,btns,wide){
+  closeModal();
+  const sc=h('div',{class:'scrim',id:'mscrim',style:'z-index:70',onclick:closeModal});
+  const m=h('div',{class:'modal'+(wide?' wide':''),role:'dialog','aria-modal':'true'},h('div',{class:'mh'},h('h3',null,title),sub?h('p',null,sub):null),body?h('div',{class:'mb'},body):null,
+    h('div',{class:'mf'},btns.map(([l,k,fn])=>h('button',{class:'btn '+(k||''),onclick:()=>{closeModal();fn&&fn()}},l))));
+  document.body.append(sc,m);requestAnimationFrame(()=>{sc.classList.add('on');m.classList.add('on')});
+  setTimeout(()=>{const b=m.querySelector('.mf .pri');if(b)b.focus()},40);
+}
+function closeModal(){const s=$('#mscrim'),m=$('.modal');if(s)s.remove();if(m)m.remove()}
+function confirmBox(title,text,ok,fn,danger){modalBox(title,text,null,[['Cancel',''],[ok,danger?'danger':'pri',fn]])}
+
+render();
+</script>
+
+</body></html>

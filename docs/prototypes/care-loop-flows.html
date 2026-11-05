@@ -1,0 +1,298 @@
+<title>Care Loop Flows</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&family=Noto+Sans+Devanagari:wght@400;500&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Layout concept: a hub of flow cards (onecare-style), each opening one full-width, linear, step-by-step chat with an EMR drawer per step. Single light theme, deliberately. */
+:root{
+  --bg:#F2F6F4; --surface:#FFFFFF; --tint:#EAF4F0;
+  --ink:#0E2420; --ink-2:#38514B; --muted:#5E756F; --faint:#93A8A3;
+  --line:#DCE6E2; --line-2:#E9F0ED;
+  --teal:#0F7A62; --teal-ink:#0A5A47; --teal-wash:#E2F3ED;
+  --purple:#6E56CF; --purple-wash:#F0EDFB;
+  --crit:#B3261E; --crit-wash:#FBEAE8; --warn:#8A5A00; --warn-wash:#FFF2D9; --good:#0F7A4A; --good-wash:#E6F5EB;
+  --wa-out:#DCF8C6;
+  --font:'Inter','Noto Sans Devanagari',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html,body{height:auto}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  padding-block:0;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:6px}
+.num{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-size:12px;letter-spacing:-.01em}
+.wrap{max-width:860px;margin:0 auto;padding-block:28px 60px}
+a{color:var(--teal-ink)}
+.ic{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* Hub */
+.word{display:flex;align-items:center;gap:9px;font-weight:700;font-size:17px;letter-spacing:-.01em;color:var(--ink)}
+.word i{width:9px;height:9px;border-radius:50%;background:var(--teal);display:inline-block;font-style:normal}
+.byline{display:flex;align-items:center;gap:8px;margin:22px 0 10px;font-size:12px;font-weight:600;letter-spacing:.03em;color:var(--muted);text-transform:uppercase}
+.byline b{color:var(--teal-ink)}
+.byline .dot{width:3px;height:3px;border-radius:50%;background:var(--faint)}
+h1.hero{margin:0;font-size:44px;line-height:1.08;letter-spacing:-.025em;font-weight:700;text-wrap:balance;max-width:14ch}
+.lede{margin:16px 0 0;color:var(--ink-2);font-size:17px;max-width:46ch;line-height:1.55}
+.lede b{color:var(--ink);font-weight:600}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.hublabel{margin:40px 0 16px;font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.fcard{display:block;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:0;overflow:hidden;width:100%;transition:border-color .15s,transform .15s}
+.fcard:hover{border-color:var(--teal);transform:translateY(-2px)}
+.fcard .prev{height:150px;background:var(--tint);padding:18px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+.fcard .prev .b1{height:9px;border-radius:5px;background:#CFE4DC}
+.fcard .prev .b2{height:9px;border-radius:5px;background:#CFE4DC;opacity:.6}
+.fcard .bubble{align-self:flex-end;background:var(--teal);color:#fff;border-radius:10px 10px 2px 10px;padding:7px 11px;font-size:12px;font-weight:500;max-width:72%}
+.fcard .bubble.crit{background:var(--crit)}
+.fcard .bubble.b{align-self:flex-start;background:#fff;color:var(--ink-2);border-radius:10px 10px 10px 2px;padding:7px 11px;font-size:12px;box-shadow:0 1px 2px rgba(14,36,32,.08)}
+.fcard .body{padding:16px 18px 18px}
+.fcard .tag{display:inline-flex;gap:6px;align-items:center;color:var(--teal-ink);font-weight:700;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+.fcard h3{margin:6px 0 4px;font-size:18px;font-weight:650;letter-spacing:-.01em;color:var(--ink)}
+.fcard p{margin:0;color:var(--muted);font-size:13px;line-height:1.5}
+.fcard .go{margin-top:12px;display:flex;align-items:center;gap:6px;color:var(--teal-ink);font-weight:600;font-size:13px}
+.foot-note{margin-top:34px;color:var(--faint);font-size:12px;max-width:50ch;line-height:1.6}
+
+/* Flow chrome */
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.back{display:inline-flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted);font-weight:500;font-size:13px;padding:0}
+.back:hover{color:var(--ink)}
+.steppill{font-size:12px;font-weight:600;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 10px}
+.flowtitle{font-size:22px;font-weight:650;letter-spacing:-.015em;margin:4px 0 2px}
+.flowsub{color:var(--muted);font-size:13.5px;margin:0 0 14px}
+.segbar{display:flex;gap:4px;margin-bottom:22px}
+.segbar i{flex:1;height:4px;border-radius:3px;background:var(--line);font-style:normal}
+.segbar i.on{background:var(--teal)}
+.segbar i.cur{background:var(--teal-ink)}
+
+/* Chat card */
+.chatcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.chead{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line-2);background:var(--tint)}
+.chead .av{width:30px;height:30px;border-radius:50%;background:var(--teal);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none}
+.chead b{display:block;font-size:13.5px;font-weight:650;line-height:1.3}
+.chead span{font-size:11.5px;color:var(--muted)}
+.chead .pill{margin-left:auto;display:flex;gap:6px}
+.chead .pill span.live{background:#fff;border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;letter-spacing:.04em}
+.chead .pill span.live i{width:6px;height:6px;border-radius:50%;background:var(--good);display:inline-block;margin-right:4px}
+.messages{padding:18px 16px;display:flex;flex-direction:column;gap:9px;min-height:180px}
+.bub{max-width:76%;padding:8px 12px;border-radius:12px;font-size:13.5px;line-height:1.45;animation:in .22s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(5px)}}
+.bub.bot{align-self:flex-start;background:var(--tint);color:var(--ink);border-bottom-left-radius:3px}
+.bub.pt{align-self:flex-end;background:var(--teal);color:#fff;border-bottom-right-radius:3px}
+.bub.pt.crit{background:var(--crit)}
+.bub.sys{align-self:center;background:none;color:var(--muted);font-size:12px;font-style:normal;text-align:center;max-width:90%;padding:4px 10px}
+.bub .who{display:block;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;opacity:.75;margin-bottom:2px}
+.bub.tpl::after{content:"Sent as an approved template";display:block;font-size:10px;opacity:.7;margin-top:3px}
+
+/* EMR toggle + drawer */
+.emrbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-top:1px solid var(--line-2)}
+.emrbtn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--purple);background:var(--purple-wash);color:var(--purple);font-weight:650;font-size:12.5px;border-radius:999px;padding:6px 13px}
+.emrbtn:hover{background:#E6E0FA}
+.emrbtn i{width:7px;height:7px;border-radius:50%;background:var(--purple);display:inline-block}
+.emrcount{font-size:12px;color:var(--muted)}
+.drawer{border-top:1px solid var(--line-2);background:var(--bg)}
+.drawer .in{padding:14px 16px 16px;display:flex;flex-direction:column;gap:8px}
+.ecard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.eowner{display:inline-flex;align-self:flex-start;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:999px;padding:2px 8px}
+.eowner.agent{background:var(--teal-wash);color:var(--teal-ink)}
+.eowner.emr{background:var(--purple-wash);color:var(--purple)}
+.eowner.scribe{background:#FDEFE0;color:#8A4B00}
+.ecard p{margin:0;font-size:12.5px;color:var(--ink-2);line-height:1.45}
+.elegend{font-size:11px;color:var(--faint);padding:2px 2px 0}
+
+/* Nav buttons */
+.flownav{display:flex;justify-content:space-between;align-items:flex-start;margin-top:18px;gap:12px}
+.navbtn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:9px 16px;font-weight:600;font-size:13.5px;color:var(--ink)}
+.navbtn:hover{background:var(--tint)}
+.navbtn.primary{background:var(--teal);border-color:var(--teal);color:#fff}
+.navbtn.primary:hover{background:var(--teal-ink)}
+.navbtn[disabled]{opacity:.4;cursor:not-allowed}
+.navwrap{display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.navwrap.l{align-items:flex-start}
+.why{font-size:11.5px;color:var(--faint)}
+
+@media (max-width:720px){
+  .cards{grid-template-columns:1fr}
+  h1.hero{font-size:32px}
+  .flownav{flex-direction:column-reverse;align-items:stretch}
+  .navwrap,.navwrap.l{align-items:stretch}
+  .navbtn{justify-content:center;width:100%}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap" id="app" tabindex="-1"></div>
+
+<script>
+(function(){
+const $=(s,r=document)=>r.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ic=d=>'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">'+d+'</svg>';
+const ARROW=ic('<path d="M5 12h14M13 6l6 6-6 6"/>');
+const BACK=ic('<path d="M19 12H5M11 18l-6-6 6-6"/>');
+
+/* ---------- Flow data ---------- */
+const FLOWS={
+ book:{
+  title:'Book a visit, start to finish',
+  sub:'Meena books on WhatsApp, checks in, Dr. Mehta consults with Scribe, and the plan comes back to her chat.',
+  bot:'Clinic assistant', botSub:'Mehta Diabetes Clinic · AI agent',
+  steps:[
+   {msgs:[
+     {who:'pt',t:'Hi, I’d like to see Dr. Mehta for my sugar follow-up.'},
+     {who:'bot',t:'Sure Meena. Dr. Mehta has these slots: Fri 7 Nov 11:00, Fri 7 Nov 4:30 pm, Sat 8 Nov 10:00.'},
+     {who:'pt',t:'Friday 7 Nov, 11:00 works.'},
+     {who:'bot',t:'Booked for Friday 7 Nov, 11:00. I’ll remind you the day before.'}
+   ],emr:[
+     {o:'agent',t:'Reads the same open slots the front desk sees — nothing is double-booked.'},
+     {o:'emr',t:'Appointment created in the OPD queue. Status: Booked.'}
+   ]},
+   {msgs:[
+     {who:'bot',t:'Reminder: your visit with Dr. Mehta is tomorrow, 11:00. Reply to confirm or reschedule.',tpl:1},
+     {who:'pt',t:'Confirm'}
+   ],emr:[
+     {o:'agent',t:'Sent as an approved WhatsApp template, a day ahead of the slot.'},
+     {o:'emr',t:'Reminder logged against the appointment. No status change.'}
+   ]},
+   {msgs:[
+     {who:'pt',t:'I’ve reached the clinic.'},
+     {who:'bot',t:'Welcome Meena, you’re checked in. 2nd in line, about 15 minutes.'}
+   ],emr:[
+     {o:'agent',t:'Check-in works from the patient’s phone — the desk doesn’t re-enter anything.'},
+     {o:'emr',t:'Status changes Booked → Checked in. Queue position updates for Dr. Mehta.'}
+   ]},
+   {msgs:[
+     {who:'sys',t:'Dr. Mehta starts the consult. Scribe listens and drafts the note.'}
+   ],emr:[
+     {o:'scribe',t:'Drafts the note, assessment and prescription from the conversation and Meena’s glucose trend.'},
+     {o:'emr',t:'Visit status changes to In consult.'}
+   ]},
+   {msgs:[
+     {who:'bot',t:'Here’s your plan from today’s visit.',tpl:1},
+     {who:'bot',t:'Metformin 500 mg twice daily. Walk 30 minutes after dinner. Repeat HbA1c in 3 months.'}
+   ],emr:[
+     {o:'emr',t:'Prescription saved, visit marked Complete once Dr. Mehta confirms the note.'},
+     {o:'agent',t:'Delivers the plan on WhatsApp and tracks whether Meena opened it.'}
+   ]}
+  ]
+ },
+ alert:{
+  title:'A high reading reaches the doctor',
+  sub:'Meena logs a glucose reading between visits. The agent checks it against the clinic’s own rules and brings the doctor in.',
+  bot:'Clinic assistant', botSub:'Mehta Diabetes Clinic · AI agent',
+  steps:[
+   {msgs:[
+     {who:'pt',t:'My fasting sugar is 262.',crit:1},
+     {who:'bot',t:'262 mg/dL is high. Do you have any of these: very thirsty, vomiting, blurry vision, or confusion?'},
+     {who:'pt',t:'No, none of those.'}
+   ],emr:[
+     {o:'agent',t:'Checks the reading against the alert limit Dr. Mehta set for Meena, not a generic number.'},
+     {o:'emr',t:'Reading added to Meena’s chart as soon as she sends it.'}
+   ]},
+   {msgs:[
+     {who:'bot',t:'Please drink water, take your medicine as prescribed, and test again in 2 hours. I’ve let Dr. Mehta know.'}
+   ],emr:[
+     {o:'agent',t:'Never changes treatment. It explains, logs, and flags — nothing more.'},
+     {o:'emr',t:'An open alert appears on Meena’s record, with the reading and why it was raised.'}
+   ]},
+   {msgs:[
+     {who:'sys',t:'Dr. Mehta opens the alert on Meena’s record and replies from the console.'}
+   ],emr:[
+     {o:'emr',t:'The doctor picks a ready reply, or writes one. It leaves as an approved WhatsApp template.'},
+     {o:'agent',t:'Delivers the doctor’s reply and marks the alert Replied.'}
+   ]},
+   {msgs:[
+     {who:'bot',t:'Please come to the clinic today so we can check you properly.',who2:'Dr. Mehta'}
+   ],emr:[
+     {o:'emr',t:'Alert marked Replied. Visible in Meena’s activity feed and her glucose chart.'}
+   ]}
+  ]
+ }
+};
+const OWNER={agent:'WhatsApp agent',emr:'EMR',scribe:'Scribe'};
+
+/* ---------- State ---------- */
+let S={view:'hub',flow:null,step:0,drawer:false};
+
+function go(view,flow){S.view=view;S.flow=flow||null;S.step=0;S.drawer=false;
+  try{history.replaceState(null,'','#'+(flow?'flow-'+flow:view))}catch(e){}
+  paint();window.scrollTo({top:0});
+}
+
+function paint(){
+  const el=$('#app');
+  el.innerHTML = S.view==='hub' ? vHub() : vFlow();
+  if(S.view==='flow'){
+    const m=$('.messages');if(m)m.scrollTop=0;
+  }
+}
+
+/* ---------- Hub ---------- */
+function card(id){
+  const f=FLOWS[id];
+  const preview = id==='book'
+    ? '<div class="b2 b1" style="width:70%"></div><div class="bubble b">Which slot works for you?</div><div class="bubble">Fri 7 Nov, 11:00</div>'
+    : '<div class="b2 b1" style="width:55%"></div><div class="bubble crit">Fasting sugar is 262</div><div class="bubble b">I’ve let Dr. Mehta know</div>';
+  return '<button class="fcard" data-open="'+id+'"><div class="prev">'+preview+'</div><div class="body"><span class="tag">'+f.steps.length+' steps on WhatsApp</span><h3>'+f.title+'</h3><p>'+f.sub+'</p><div class="go">Open the flow'+ARROW+'</div></div></button>';
+}
+function vHub(){
+  return '<div class="word"><i></i>Care Loop</div>'
+  +'<div class="byline"><b>Mehta Diabetes Clinic</b><span class="dot"></span>WHATSAPP AGENT + EMR<span class="dot"></span>NOV 2026</div>'
+  +'<h1 class="hero">Care that doesn’t stop at the visit.</h1>'
+  +'<p class="lede">The WhatsApp agent books, reminds and follows up. <b>Eka EMR</b> and <b>Scribe</b> hold the record and the consult. Open the EMR tag on any step to see what lands where.</p>'
+  +'<div class="hublabel">Click-through flows · sample data</div>'
+  +'<div class="cards">'+card('book')+card('alert')+'</div>'
+  +'<p class="foot-note">Prototype with sample data. Nothing is sent or saved. Clinical text is illustrative, not advice.</p>';
+}
+
+/* ---------- Flow ---------- */
+function vFlow(){
+  const f=FLOWS[S.flow],n=f.steps.length,i=S.step,st=f.steps[i];
+  const seen=[];for(let k=0;k<=i;k++)seen.push(f.steps[k]);
+  const msgs=seen.map((s,k)=>s.msgs.map(m=>bubble(m,k===i)).join('')).join('');
+  const seg=Array.from({length:n},(_,k)=>'<i class="'+(k<i?'on':k===i?'on cur':'')+'"></i>').join('');
+  const emr=st.emr.map(e=>'<div class="ecard"><span class="eowner '+e.o+'">'+OWNER[e.o]+'</span><p>'+e.t+'</p></div>').join('');
+  const last=i===n-1,first=i===0;
+  return '<div class="topbar"><button class="back" data-hub>'+BACK+'All flows</button><span class="steppill num">Step '+(i+1)+' of '+n+'</span></div>'
+  +'<h2 class="flowtitle">'+f.title+'</h2><p class="flowsub">'+f.sub+'</p>'
+  +'<div class="segbar">'+seg+'</div>'
+  +'<div class="chatcard">'
+    +'<div class="chead"><div class="av">M</div><div><b>'+f.bot+'</b><span>'+f.botSub+'</span></div><div class="pill"><span class="live"><i></i>LIVE</span></div></div>'
+    +'<div class="messages">'+msgs+'</div>'
+    +'<div class="emrbar"><button class="emrbtn" data-emr><i></i>EMR — see what lands here</button><span class="emrcount">'+st.emr.length+' update'+(st.emr.length>1?'s':'')+' this step</span></div>'
+    +(S.drawer?'<div class="drawer"><div class="in">'+emr+'<div class="elegend">WhatsApp agent = runs the chat · EMR = Eka patient record · Scribe = in-consult drafting</div></div></div>':'')
+  +'</div>'
+  +'<div class="flownav">'
+    +'<div class="navwrap l">'+'<button class="navbtn" data-prev'+(first?' disabled':'')+'>'+BACK+'Back</button>'+(first?'<span class="why">This is the first step</span>':'')+'</div>'
+    +'<div class="navwrap">'+(last?'<button class="navbtn" data-hub>Back to all flows</button><span class="why">End of this flow</span>':'<button class="navbtn primary" data-next>Next'+ARROW+'</button>')+'</div>'
+  +'</div>';
+}
+function bubble(m,fresh){
+  if(m.who==='sys')return '<div class="bub sys"'+(fresh?' style="animation:in .22s ease-out"':'')+'>'+esc(m.t)+'</div>';
+  const cls=m.who==='pt'?'pt'+(m.crit?' crit':''):'bot';
+  const who=m.who2?'<span class="who">'+esc(m.who2)+'</span>':'';
+  return '<div class="bub '+cls+(m.tpl?' tpl':'')+'">'+who+esc(m.t)+'</div>';
+}
+
+/* ---------- Events ---------- */
+document.addEventListener('click',e=>{
+  const o=e.target.closest('[data-open]');if(o){go('flow',o.dataset.open);return}
+  const h=e.target.closest('[data-hub]');if(h){go('hub');return}
+  const nx=e.target.closest('[data-next]');if(nx){const f=FLOWS[S.flow];if(S.step<f.steps.length-1){S.step++;S.drawer=false;paint()}return}
+  const pv=e.target.closest('[data-prev]');if(pv){if(S.step>0){S.step--;S.drawer=false;paint()}return}
+  const em=e.target.closest('[data-emr]');if(em){S.drawer=!S.drawer;paint()}
+});
+window.addEventListener('hashchange',()=>{
+  const h=location.hash.slice(1);
+  if(h==='hub'||!h)go('hub');
+  else if(h.startsWith('flow-')&&FLOWS[h.slice(5)])go('flow',h.slice(5));
+});
+const h0=location.hash.slice(1);
+if(h0.startsWith('flow-')&&FLOWS[h0.slice(5)]){S.view='flow';S.flow=h0.slice(5)}
+paint();
+})();
+</script>
