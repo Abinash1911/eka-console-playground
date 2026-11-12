@@ -2,6 +2,13 @@
 
 Open work, newest decisions first. Move an item to `docs/build-log.md` when done.
 
+## Widget header ribbon (P0, tomorrow 2026-11-13)
+- [ ] **P0: get the dev-console PR up.** Branch `feat/ribbon-settings` is ready locally (rebased on main `862976e`, 15 tests pass), but the push got HTTP 403. Needs an org admin to install the Claude GitHub App on `eka-care/dev-console` (https://github.com/apps/claude/installations/select_target) or GitHub reconnected. Then push and open the PR with the text in `patches/header-ribbon/PR-DESCRIPTIONS.md`. Reviewer: ask who owns dev-console agents (`dotdotcare`, `moon_garg` touched them last); Geethanjali is not on that repo's recent history.
+- [ ] P0: chase review on the widget PR https://github.com/eka-care/synapse-sdk/pull/218 (reviewer `geethanjaliiii`; confirm the login is right).
+- [ ] Open the Eka Console Prototype artifact and check the ribbon block and live ribbon (edits were not opened in a browser).
+- [ ] Welcome card patch (`patches/welcome-card/`) is built but not raised: decide whether and when.
+- [ ] Open questions for developers: claims 26 to 28 in `docs/claims-to-confirm.md` (matrix passes `theme` through, shared "dismissed" store, upload URL is https in production only). The ₹20 reward (counting messages, paying out) needs a backend; nothing built.
+
 ## Voice agent (inbound phone)
 - [ ] **Text-the-clinic fallback:** when nobody answers a handover, the agent takes name, number and reason, and sends them to the clinic by text/WhatsApp. Needs a sending route (check what doot/matrix can send first). Not started.
 - [ ] Reviewer summary of all voice patches (one page, for developers).
