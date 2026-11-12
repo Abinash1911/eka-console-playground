@@ -21,7 +21,7 @@ Base: `main` (`bbb7405` when built). Two commits: `feat(widget): header ribbon (
 ## dev-console: "Header ribbon settings in the agent's General tab"
 Base: `main` (`862976e` when built; also applies on `36eb96b`). One commit. Patch file: `patches/header-ribbon/dev-console/`.
 
-**What**: a "Header Ribbon" block in the Appearance form: text (empty turns it off), icon (preset, or upload your own image / https URL), fixed or dismissable, background and text colour, live preview. Saved as `theme.ribbon` in the agent's theme JSON (`{text, dismissable, icon | icon_img, background, text_color}`). No migration; matrix needs no change (it returns `theme` as an untyped dict).
+**What**: a "Header Ribbon" block in the Appearance form: text (up to 200 characters including spaces, with a live counter; empty turns it off), icon (preset, or upload your own image / https URL), fixed or dismissable, background and text colour, live preview. Saved as `theme.ribbon` in the agent's theme JSON (`{text, dismissable, icon | icon_img, background, text_color}`). No migration; matrix needs no change (it returns `theme` as an untyped dict).
 **Notes for review**
 - Save logic lives in `agents/services/ribbon.py` (pure Python, `agents/test_ribbon.py`, DB-free, 15 tests). The view only calls it.
 - Uploads reuse `_save_theme_image` (public media). Added limits: image content type and 1 MB; https-only URLs (the widget ignores http).

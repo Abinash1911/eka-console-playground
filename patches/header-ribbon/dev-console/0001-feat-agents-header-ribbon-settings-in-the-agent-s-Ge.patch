@@ -1,4 +1,4 @@
-From 79562c9a54c700b6d42aba589366e04d3023a11f Mon Sep 17 00:00:00 2001
+From dfa72bb7279b05f3d95bd7eeaea555ae9ba4de79 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:52:26 +0000
 Subject: [PATCH] feat(agents): header ribbon settings in the agent's General
@@ -21,8 +21,8 @@ Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
  agents/services/ribbon.py    |  62 ++++++++++++++
  agents/test_ribbon.py        | 143 +++++++++++++++++++++++++++++++
  agents/views/agent.py        |  13 +++
- templates/agents/detail.html | 161 +++++++++++++++++++++++++++++++++++
- 5 files changed, 392 insertions(+)
+ templates/agents/detail.html | 162 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 393 insertions(+)
  create mode 100644 agents/services/ribbon.py
  create mode 100644 agents/test_ribbon.py
 
@@ -303,7 +303,7 @@ index 889f2cb..954ccfc 100644
          if clear_flag:
              theme.pop(theme_key, None)
 diff --git a/templates/agents/detail.html b/templates/agents/detail.html
-index 76fb762..83ed67a 100644
+index 76fb762..c0776d2 100644
 --- a/templates/agents/detail.html
 +++ b/templates/agents/detail.html
 @@ -60,6 +60,12 @@
@@ -359,7 +359,7 @@ index 76fb762..83ed67a 100644
      titleImgPreview: window._agentThemeInit.titleImgPreview,
      backgroundImgPreview: window._agentThemeInit.backgroundImgPreview,
      assistantIconPreview: window._agentThemeInit.assistantIconPreview,
-@@ -1789,6 +1828,128 @@
+@@ -1789,6 +1828,129 @@
                      <input type="hidden" name="theme_header_tinted" :value="headerTinted ? '1' : ''">
                  </div>
  
@@ -372,6 +372,7 @@ index 76fb762..83ed67a 100644
 +                    <input type="text" name="ribbon_text" x-model="ribbonText" maxlength="200"
 +                           placeholder="e.g. Send 2 messages, get ₹20"
 +                           class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
++                    <p class="text-xs text-gray-400 text-right -mt-1.5"><span x-text="ribbonText.length"></span> / 200 characters, spaces included</p>
 +                    <div x-show="ribbonText.trim()" x-cloak class="flex flex-col gap-3">
 +                        <div class="grid grid-cols-2 gap-4">
 +                            <div class="flex flex-col gap-1.5">

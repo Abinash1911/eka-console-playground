@@ -132,3 +132,6 @@ Ribbon icon can be uploaded (file or https URL) in the console form; widget `ico
 
 ## 2026-11-12: ribbon "Behavior" is a single choice
 In the console form (dev-console patch) and the Eka Console Prototype artifact, Behavior is now two radio options, Fixed or Dismissable, instead of a toggle. The saved value is unchanged (`dismissable` true/false), so widget, loader and `build_ribbon` did not change. Checked: patched template compiles; the form block in a browser (default Fixed posts empty, Dismissable posts "1", saved value loads back); console patch applies on latest main; 15 tests still pass. The artifact edit was not opened in a browser.
+
+## 2026-11-12: ribbon text limit shown
+The 200-character limit (spaces included) was already enforced (input `maxlength`, `build_ribbon` cut); the console form and the Eka Console Prototype now show "N / 200 characters, spaces included" live. Checked in a browser: counter updates, pasting 250 characters stops at 200. At the widget's 384px width 200 characters wrap to several lines (the ribbon wraps; nothing is cut). The artifact edit was not opened in a browser.

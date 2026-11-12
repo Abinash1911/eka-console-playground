@@ -1837,6 +1837,7 @@
                     <input type="text" name="ribbon_text" x-model="ribbonText" maxlength="200"
                            placeholder="e.g. Send 2 messages, get ₹20"
                            class="w-full bg-white border border-gray-300 rounded-lg px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                    <p class="text-xs text-gray-400 text-right -mt-1.5"><span x-text="ribbonText.length"></span> / 200 characters, spaces included</p>
                     <div x-show="ribbonText.trim()" x-cloak class="flex flex-col gap-3">
                         <div class="grid grid-cols-2 gap-4">
                             <div class="flex flex-col gap-1.5">
