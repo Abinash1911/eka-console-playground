@@ -27,6 +27,6 @@ Base: `main` (`862976e` when built; also applies on `36eb96b`). One commit. Patc
 - Uploads reuse `_save_theme_image` (public media). Added limits: image content type and 1 MB; https-only URLs (the widget ignores http).
 - `ThemeConfig` documents the shape; `ThemeRequest` (public API) is deliberately not changed.
 - The form block sits between "Toggle Header Color" and "Feedback Form"; the General form is already multipart.
-**Tested**: the 15 tests; the patched `detail.html` compiles as a Django template; the form block rendered in a browser with the repo's Tailwind build (type, icon, upload, URL, clear, toggle, colours, saved values load back).
+**Tested**: the 15 tests; the patched `detail.html` compiles as a Django template; the form block rendered in a browser with the repo's Tailwind build (type, icon, upload, URL, clear, Fixed or Dismissable choice, colours, saved values load back).
 **Not tested**: the running app (no database here): the real save and the upload to storage.
 **Pairs with**: the synapse-sdk PR (widget + embed).

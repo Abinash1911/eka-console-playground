@@ -24,7 +24,7 @@ Readable copies in `*/code/`. Screenshots in `screenshots/`. 1 and 3 are indepen
 
 ## How it is linked (one chain, checked end to end)
 ```
-console General tab form (Header Ribbon block, multipart: text, icon / icon file / icon URL, toggle, 2 colours)
+console General tab form (Header Ribbon block, multipart: text, icon / icon file / icon URL, Fixed or Dismissable choice, 2 colours)
   -> agents/views/agent.py save: resolve_icon_img (+ _save_theme_image for an upload) and build_ribbon -> agent.theme["ribbon"]   (JSON column, no migration)
   -> matrix GET .../agent-config/<id>  returns theme as-is (untyped dict)                                                      (no change)
   -> widget-embed mapAgentConfigThemeToWidgetTheme: ribbon{text, dismissable, icon, icon_img, background, text_color} -> theme.ribbon{... iconUrl, textColor}   (patch 2)
@@ -39,7 +39,7 @@ console General tab form (Header Ribbon block, multipart: text, icon / icon file
 - Looked at in a real browser:
   - the widget through the mock server (`prototypes/widget`): fixed, dismissable, stays closed after reload;
   - the **real embed + real widget bundle**, with the agent-config call answered by a test response carrying `theme.ribbon` (screenshot `embed-end-to-end.png`): the ribbon shows with the saved text, icon and colours;
-  - the console form block: the real HTML from the patched template with the repo's own Tailwind build and Alpine, in a stand-alone page (screenshots `console-form*.png`): typing, icon, upload your own (file and URL, https check, clear), toggle, colour pickers, clear buttons, preview, values posted (the file included), saved values load back.
+  - the console form block: the real HTML from the patched template with the repo's own Tailwind build and Alpine, in a stand-alone page (screenshots `console-form*.png`): typing, icon, upload your own (file and URL, https check, clear), Fixed or Dismissable choice, colour pickers, clear buttons, preview, values posted (the file included), saved values load back.
 
 ## Not tested
 - The real console page and save: the Django app was not run (no database, no secrets); `build_ribbon` and `resolve_icon_img` are tested, the view change only compiles. The file upload to public storage (`_save_theme_image`) was not run (replaced by a stub in tests).
