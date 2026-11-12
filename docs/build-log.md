@@ -135,3 +135,6 @@ In the console form (dev-console patch) and the Eka Console Prototype artifact, 
 
 ## 2026-11-12: ribbon text limit shown
 The 200-character limit (spaces included) was already enforced (input `maxlength`, `build_ribbon` cut); the console form and the Eka Console Prototype now show "N / 200 characters, spaces included" live. Checked in a browser: counter updates, pasting 250 characters stops at 200. At the widget's 384px width 200 characters wrap to several lines (the ribbon wraps; nothing is cut). The artifact edit was not opened in a browser.
+
+## 2026-11-12: ribbon PR raised (synapse-sdk); dev-console push blocked
+At the user's request: pushed new branch `feat/header-ribbon` (2 commits on `bbb7405`) and opened https://github.com/eka-care/synapse-sdk/pull/218, review requested from `geethanjaliiii` (login read from her commit email; she wrote ~105 of the last ~108 human commits to widget/embed). dev-console: branch `feat/ribbon-settings` rebased onto latest main `862976e` locally (15 tests pass, template compiles, py-compile ok), but the push got HTTP 403 ("Claude doesn't have GitHub access to eka-care/dev-console"): needs the Claude GitHub App installed or GitHub reconnected for that repo. Nothing pushed to `main` anywhere; the welcome card is not part of either PR.
