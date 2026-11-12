@@ -17,5 +17,14 @@ export default function HeaderRibbon({ config }: { config: TRibbonConfig }) {
   );
 
   if (dismissed) return null;
-  return <HeaderRibbonView text={text} icon={config.icon} dismissable={dismissable} onDismiss={dismiss} />;
+  return (
+    <HeaderRibbonView
+      text={text}
+      icon={config.icon}
+      background={config.background}
+      textColor={config.textColor}
+      dismissable={dismissable}
+      onDismiss={dismiss}
+    />
+  );
 }

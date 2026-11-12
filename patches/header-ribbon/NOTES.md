@@ -1,32 +1,44 @@
-# Header ribbon (synapse-sdk widget)
+# Header ribbon: widget, embed and console
 
-A one-line message under the widget header, set by the host. Built separately from the welcome card (`patches/welcome-card/`); either can be taken alone.
+A one-line message under the widget header (offer, privacy note, anything short). Set per agent in the console, or by the host page. Built separately from the welcome card (`patches/welcome-card/`); either can be taken alone.
 
-Patch: `patches/header-ribbon/synapse-sdk/0001-*.patch` (applies with plain `git am` on synapse-sdk `bbb7405`, main 2026-11-07). Readable copies in `synapse-sdk/code/`. Screenshots in `screenshots/`.
+## Settings
+| Setting | Console field | Widget (`theme.ribbon`) | API shape (`theme.ribbon` in agent theme JSON) |
+|---|---|---|---|
+| Message | text (empty turns it off) | `text` | `text` |
+| Fixed or dismissable | toggle "Users can close it" | `dismissable` (default fixed) | `dismissable` |
+| Icon | None, Gift, Info, Megaphone, Sparkles, Shield | `icon` | `icon` |
+| Background colour | colour picker (empty: accent colour) | `background` (hex) | `background` |
+| Text colour | colour picker (empty: black or white, whichever reads better) | `textColor` (hex) | `text_color` |
+| "Closed" memory key | not in the console (the text is the key, so new text shows again) | `id` | `id` |
 
-## Config (host `theme.ribbon`, via the embed `theme` attribute or `init({ theme })`)
-`{ text, dismissable?, icon?, id? }`
-- `text`: the message. Empty or missing means no ribbon.
-- `dismissable`: close button; stays closed for this agent in this browser. Default false (fixed).
-- `icon`: `"gift"` or `"info"`. Default none.
-- `id`: change it to show the ribbon again to people who closed an older one. Defaults to `text`.
+A dismissed ribbon stays closed for that agent in that browser. Only hex colours (`#rgb`, `#rrggbb`) and the five icons are accepted; anything else is ignored.
 
-## What changed
-- New: `types/ribbon.ts`, `molecules/banner/HeaderRibbonView.tsx` (drawing), `molecules/banner/HeaderRibbon.tsx` (reads agent id from the store, remembers "closed"), `hooks/useRibbonDismiss.ts`, tests.
-- Edited: `organisms/WidgetContainer.tsx` (renders it under the header, lazy), type key added in `main.tsx` and `hooks/useChatWidget.ts`.
-- Fixed ribbons never touch storage. Dismissable ones write `ribbon_dismissed:<id>` into the same per-agent store as the feedback and consent flags.
+## The patches (apply in order, on the base commits below)
+| # | Repo | Base | File | What |
+|---|---|---|---|---|
+| 1 | synapse-sdk | `bbb7405` (main, 2026-11-07) | `synapse-sdk/0001-*.patch` | Widget: the ribbon, colours, icons, "closed" memory, tests |
+| 2 | synapse-sdk | after 1 | `synapse-sdk/0002-*.patch` | Embed loader: carries `theme.ribbon` from the agent config into the widget |
+| 3 | dev-console | `36eb96b` (main, 2026-11-12) | `dev-console/0001-*.patch` | Console: "Header Ribbon" block in the agent's General tab, saved in the theme JSON |
+Readable copies in `*/code/`. Screenshots in `screenshots/`. 1 and 3 are independent of each other; 2 needs 1. No database migration (the theme is a JSON column) and no matrix change (matrix returns `theme` as an untyped dict).
 
-## Checks (run on this patch alone, on `bbb7405`)
-- `tsc -b`: clean. `vitest`: 402 passed (398 on main). `npm run build` + bundle budget: OK, entry +152 B raw / +43 B gzip (310,637 / 96,050 of 312,000 / 96,500). The ribbon is its own lazy chunk.
-- eslint: no new problems (main already has 2 errors in `useChatWidget.ts`).
-- Looked at in a real browser (mock server, `prototypes/widget`): fixed ribbon, dismissable ribbon, stays closed after reload, absent without config, sending a message works with it. Screenshots saved.
+## Checks
+- Widget (1 and 2 on `bbb7405`): `tsc -b` clean; vitest 406 passed (398 on main); `npm run build` + bundle budget OK (entry +152 B raw / +43 B gzip, ribbon is a lazy chunk); embed `tsc` clean. eslint: nothing new (main already has errors in `useChatWidget.ts`).
+- All three synapse-sdk patches (ribbon x2 + welcome card) apply together with `git am --3way`.
+- Console (3 on `36eb96b`): 7 new DB-free tests for the save logic pass (run with a bare Django settings object, not the repo's test runner); the patched `detail.html` compiles as a Django template; `ThemeConfig` accepts and rejects as intended; patch applies with `git am`.
+- Looked at in a real browser:
+  - the widget through the mock server (`prototypes/widget`): fixed, dismissable, stays closed after reload;
+  - the **real embed + real widget bundle**, with the agent-config call answered by a test response carrying `theme.ribbon` (screenshot `embed-end-to-end.png`): the ribbon shows with the saved text, icon and colours;
+  - the console form block: the real HTML from the patched template with the repo's own Tailwind build and Alpine, in a stand-alone page (screenshots `console-form*.png`): typing, icon, toggle, colour pickers, clear buttons, preview, values posted, saved values load back.
 
 ## Not tested
-- Through the real embed (`<eka-medassist-widget theme='{...}'>`): I did not check that the embed passes `theme.ribbon` through to the widget.
-- Agent-config API: `theme.ribbon` is not mapped from the API (embed `mapAgentConfigThemeToWidgetTheme`), so a console setting would need backend + embed work. See `docs/claims-to-confirm.md` 26.
-- Mobile, side panel, dark mode, screen readers, RTL. The ribbon uses `bg-primary text-primary-foreground`, so contrast follows the agent's accent colour.
-- No reward logic. The ribbon is only text.
+- The real console page and save: the Django app was not run (no database, no secrets); `build_ribbon` is tested, the view change only compiles.
+- A real agent-config response from matrix (the test response imitates its shape; matrix passes `theme` through, read not run).
+- Mobile, side panel, dark mode, screen readers, RTL; very long text.
+- The public agents API (`ThemeRequest`) is not changed, so a ribbon can only be set from the console form for now.
+- No reward logic: the ribbon is only text.
 
 ## Deviations / additions (ours, not from a spec)
-- Names `ribbon`, `dismissable`, `icon`, `id` are ours.
-- Same two small storage helpers exist in `useRibbonDismiss.ts` and in `useChatWidget.ts` (`readAgentFlag`/`writeAgentFlag`, private there). A developer may want one shared helper.
+- Names and the icon list are ours; "Behavior"/"Header Ribbon" labels follow the existing form wording.
+- Same two small storage helpers exist in `useRibbonDismiss.ts` and, privately, in `useChatWidget.ts`; a developer may want one shared helper.
+- The console preview approximates the widget (accent colour fallback, same black/white rule).

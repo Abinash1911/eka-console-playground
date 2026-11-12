@@ -1,27 +1,31 @@
-From 840bd7b3bc41901219fef7eba744d336818ee809 Mon Sep 17 00:00:00 2001
+From 4b7e059b46ea0eb6c72f8c22c08ca2ae7b20bd58 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:19:07 +0000
-Subject: [PATCH] feat(widget): header ribbon (theme.ribbon)
+Subject: [PATCH 1/2] feat(widget): header ribbon (theme.ribbon)
 
 A one-line message under the header, set by the host in theme.ribbon:
-{ text, dismissable?, icon?, id? }. Fixed by default; a dismissable one
-remembers it was closed per agent in this browser (same store as the
-feedback/consent flags). Lazy-loaded to stay inside the entry bundle budget.
+{ text, dismissable?, icon?, background?, textColor?, id? }. Fixed by
+default; a dismissable one remembers it was closed per agent in this
+browser (same store as the feedback/consent flags). Colours are hex only
+(anything else is ignored); with only a background the text is black or
+white, whichever reads better; with neither it uses the accent colour.
+Icons: gift, info, megaphone, sparkles, shield. Lazy-loaded to stay inside
+the entry bundle budget.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
 ---
- .../src/hooks/test/useRibbonDismiss.test.tsx  | 39 +++++++++++++++
- packages/widget/src/hooks/useChatWidget.ts    |  3 ++
- packages/widget/src/hooks/useRibbonDismiss.ts | 49 +++++++++++++++++++
- packages/widget/src/main.tsx                  |  3 ++
- .../molecules/banner/HeaderRibbon.test.tsx    | 41 ++++++++++++++++
- .../src/molecules/banner/HeaderRibbon.tsx     | 21 ++++++++
- .../banner/HeaderRibbonView.test.tsx          | 22 +++++++++
- .../src/molecules/banner/HeaderRibbonView.tsx | 46 +++++++++++++++++
- .../widget/src/organisms/WidgetContainer.tsx  | 10 ++++
- packages/widget/src/types/ribbon.ts           | 14 ++++++
- 10 files changed, 248 insertions(+)
+ .../src/hooks/test/useRibbonDismiss.test.tsx  | 39 ++++++++++
+ packages/widget/src/hooks/useChatWidget.ts    |  3 +
+ packages/widget/src/hooks/useRibbonDismiss.ts | 49 ++++++++++++
+ packages/widget/src/main.tsx                  |  3 +
+ .../molecules/banner/HeaderRibbon.test.tsx    | 41 ++++++++++
+ .../src/molecules/banner/HeaderRibbon.tsx     | 30 ++++++++
+ .../banner/HeaderRibbonView.test.tsx          | 46 +++++++++++
+ .../src/molecules/banner/HeaderRibbonView.tsx | 76 +++++++++++++++++++
+ .../widget/src/organisms/WidgetContainer.tsx  | 10 +++
+ packages/widget/src/types/ribbon.ts           | 18 +++++
+ 10 files changed, 315 insertions(+)
  create mode 100644 packages/widget/src/hooks/test/useRibbonDismiss.test.tsx
  create mode 100644 packages/widget/src/hooks/useRibbonDismiss.ts
  create mode 100644 packages/widget/src/molecules/banner/HeaderRibbon.test.tsx
@@ -221,10 +225,10 @@ index 0000000..727c905
 +});
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbon.tsx b/packages/widget/src/molecules/banner/HeaderRibbon.tsx
 new file mode 100644
-index 0000000..1abe1a3
+index 0000000..c53596a
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbon.tsx
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,30 @@
 +import useMedAssistStore from "@/store/medAssistStore";
 +import { useRibbonDismiss } from "@/hooks/useRibbonDismiss";
 +import type { TRibbonConfig } from "@/types/ribbon";
@@ -244,14 +248,23 @@ index 0000000..1abe1a3
 +  );
 +
 +  if (dismissed) return null;
-+  return <HeaderRibbonView text={text} icon={config.icon} dismissable={dismissable} onDismiss={dismiss} />;
++  return (
++    <HeaderRibbonView
++      text={text}
++      icon={config.icon}
++      background={config.background}
++      textColor={config.textColor}
++      dismissable={dismissable}
++      onDismiss={dismiss}
++    />
++  );
 +}
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx b/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx
 new file mode 100644
-index 0000000..31a54d6
+index 0000000..71a42b3
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,46 @@
 +import { describe, it, expect, vi } from "vitest";
 +import { render, screen, fireEvent } from "@testing-library/preact";
 +import HeaderRibbonView from "./HeaderRibbonView";
@@ -273,20 +286,69 @@ index 0000000..31a54d6
 +    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
 +    expect(onDismiss).toHaveBeenCalledTimes(1);
 +  });
++
++  it("uses the accent colours when no colours are given", () => {
++    render(<HeaderRibbonView text="Hello" />);
++    expect(screen.getByRole("status").getAttribute("style")).toBeNull();
++  });
++
++  it("applies a background and picks a readable text colour", () => {
++    const { rerender } = render(<HeaderRibbonView text="Hello" background="#1e3a8a" />);
++    expect(screen.getByRole("status")).toHaveStyle({ backgroundColor: "#1e3a8a", color: "#ffffff" });
++    rerender(<HeaderRibbonView text="Hello" background="#fef3c7" />);
++    expect(screen.getByRole("status")).toHaveStyle({ color: "#000000" });
++    rerender(<HeaderRibbonView text="Hello" background="#fff" />);
++    expect(screen.getByRole("status")).toHaveStyle({ color: "#000000" });
++  });
++
++  it("an explicit text colour wins over the automatic one", () => {
++    render(<HeaderRibbonView text="Hello" background="#1e3a8a" textColor="#ffd54a" />);
++    expect(screen.getByRole("status")).toHaveStyle({ color: "#ffd54a" });
++  });
++
++  it("ignores values that are not hex colours", () => {
++    render(<HeaderRibbonView text="Hello" background="red; display:none" textColor="url(x)" />);
++    expect(screen.getByRole("status").getAttribute("style")).toBeNull();
++  });
 +});
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbonView.tsx b/packages/widget/src/molecules/banner/HeaderRibbonView.tsx
 new file mode 100644
-index 0000000..a921396
+index 0000000..ed75c9b
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbonView.tsx
-@@ -0,0 +1,46 @@
-+import { Gift, Info, X } from "lucide-react";
+@@ -0,0 +1,76 @@
++import { Gift, Info, Megaphone, ShieldCheck, Sparkles, X } from "lucide-react";
 +import { cn } from "@/lib/utils";
 +import type { TRibbonConfig } from "@/types/ribbon";
++
++const ICONS = {
++  gift: Gift,
++  info: Info,
++  megaphone: Megaphone,
++  sparkles: Sparkles,
++  shield: ShieldCheck,
++};
++
++const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
++
++/** The colour if it is `#rgb` / `#rrggbb`, else undefined (so the default applies). */
++function hexOrUndefined(value?: string): string | undefined {
++  const v = value?.trim();
++  return v && HEX.test(v) ? v : undefined;
++}
++
++/** Black or white, whichever reads better on `hex`. */
++function readableOn(hex: string): string {
++  const h = hex.length === 4 ? hex.replace(/./g, (c, i) => (i ? c + c : c)) : hex;
++  const [r, g, b] = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
++  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#000000" : "#ffffff";
++}
 +
 +interface HeaderRibbonViewProps {
 +  text: string;
 +  icon?: TRibbonConfig["icon"];
++  background?: string;
++  textColor?: string;
 +  /** Shows the close button. */
 +  dismissable?: boolean;
 +  onDismiss?: () => void;
@@ -296,15 +358,20 @@ index 0000000..a921396
 +export default function HeaderRibbonView({
 +  text,
 +  icon,
++  background,
++  textColor,
 +  dismissable = false,
 +  onDismiss,
 +  className,
 +}: HeaderRibbonViewProps) {
-+  const Icon = icon === "gift" ? Gift : icon === "info" ? Info : null;
++  const Icon = icon ? ICONS[icon] : undefined;
++  const bg = hexOrUndefined(background);
++  const fg = hexOrUndefined(textColor) ?? (bg ? readableOn(bg) : undefined);
 +
 +  return (
 +    <div
 +      role="status"
++      style={{ ...(bg && { backgroundColor: bg }), ...(fg && { color: fg }) }}
 +      className={cn(
 +        "synapse-header-ribbon flex flex-shrink-0 items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-xs font-medium",
 +        className
@@ -370,13 +437,13 @@ index e2ebf4c..5799b1a 100644
              // inside the empty-state stack on fullscreen) or in the footer.
 diff --git a/packages/widget/src/types/ribbon.ts b/packages/widget/src/types/ribbon.ts
 new file mode 100644
-index 0000000..a59ebe4
+index 0000000..20d9b8c
 --- /dev/null
 +++ b/packages/widget/src/types/ribbon.ts
-@@ -0,0 +1,14 @@
+@@ -0,0 +1,18 @@
 +/**
 + * Header ribbon: a one-line message under the header. Host `theme.ribbon`
-+ * (embed `theme` attribute / `init({ theme })`).
++ * (embed `theme` attribute / `init({ theme })`), or the agent-config API.
 + */
 +export type TRibbonConfig = {
 +  /** The message. Empty or missing -> no ribbon. */
@@ -384,7 +451,11 @@ index 0000000..a59ebe4
 +  /** Shows a close button; once closed it stays closed for this agent in this browser. Default false (fixed). */
 +  dismissable?: boolean;
 +  /** Small icon before the text. Default none. */
-+  icon?: "gift" | "info";
++  icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield";
++  /** Background colour as hex (`#rgb` or `#rrggbb`). Default: the agent's accent colour. Anything else is ignored. */
++  background?: string;
++  /** Text and icon colour as hex. Default: black or white, whichever reads better on the background. Anything else is ignored. */
++  textColor?: string;
 +  /** Identifies the message for "closed" memory. Change it to show the ribbon again to people who closed an older one. Defaults to `text`. */
 +  id?: string;
 +};
