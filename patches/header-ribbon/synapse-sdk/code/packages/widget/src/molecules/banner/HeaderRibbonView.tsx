@@ -12,6 +12,12 @@ const ICONS = {
 
 const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
 
+/** The URL if it is https, else undefined (so the preset icon applies). */
+function httpsOrUndefined(value?: string): string | undefined {
+  const v = value?.trim();
+  return v && /^https:\/\//i.test(v) ? v : undefined;
+}
+
 /** The colour if it is `#rgb` / `#rrggbb`, else undefined (so the default applies). */
 function hexOrUndefined(value?: string): string | undefined {
   const v = value?.trim();
@@ -28,6 +34,7 @@ function readableOn(hex: string): string {
 interface HeaderRibbonViewProps {
   text: string;
   icon?: TRibbonConfig["icon"];
+  iconUrl?: string;
   background?: string;
   textColor?: string;
   /** Shows the close button. */
@@ -39,6 +46,7 @@ interface HeaderRibbonViewProps {
 export default function HeaderRibbonView({
   text,
   icon,
+  iconUrl,
   background,
   textColor,
   dismissable = false,
@@ -46,6 +54,7 @@ export default function HeaderRibbonView({
   className,
 }: HeaderRibbonViewProps) {
   const Icon = icon ? ICONS[icon] : undefined;
+  const customIcon = httpsOrUndefined(iconUrl);
   const bg = hexOrUndefined(background);
   const fg = hexOrUndefined(textColor) ?? (bg ? readableOn(bg) : undefined);
 
@@ -58,7 +67,11 @@ export default function HeaderRibbonView({
         className
       )}
     >
-      {Icon && <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />}
+      {customIcon ? (
+        <img src={customIcon} alt="" width={16} height={16} className="w-4 h-4 flex-shrink-0 rounded-sm object-cover" />
+      ) : (
+        Icon && <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
+      )}
       <span className="flex-1 min-w-0 text-balance">{text}</span>
       {dismissable && (
         <button

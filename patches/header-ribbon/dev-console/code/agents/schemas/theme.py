@@ -9,6 +9,7 @@ class RibbonConfig(BaseModel):
     text: str
     dismissable: bool = False
     icon: Optional[Literal["gift", "info", "megaphone", "sparkles", "shield"]] = None
+    icon_img: Optional[str] = None  # uploaded icon (https image URL); wins over `icon`
     background: Optional[str] = None  # hex; absent -> the accent colour
     text_color: Optional[str] = None  # hex; absent -> black or white, whichever reads better
     id: Optional[str] = None  # change to show it again to people who closed an older one

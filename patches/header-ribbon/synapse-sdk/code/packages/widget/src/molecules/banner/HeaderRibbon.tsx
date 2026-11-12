@@ -21,6 +21,7 @@ export default function HeaderRibbon({ config }: { config: TRibbonConfig }) {
     <HeaderRibbonView
       text={text}
       icon={config.icon}
+      iconUrl={config.iconUrl}
       background={config.background}
       textColor={config.textColor}
       dismissable={dismissable}

@@ -1,31 +1,32 @@
-From 4b7e059b46ea0eb6c72f8c22c08ca2ae7b20bd58 Mon Sep 17 00:00:00 2001
+From da1c34473367d6c007a53b0bf5eaefa5b7911d2b Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:19:07 +0000
 Subject: [PATCH 1/2] feat(widget): header ribbon (theme.ribbon)
 
 A one-line message under the header, set by the host in theme.ribbon:
-{ text, dismissable?, icon?, background?, textColor?, id? }. Fixed by
-default; a dismissable one remembers it was closed per agent in this
-browser (same store as the feedback/consent flags). Colours are hex only
-(anything else is ignored); with only a background the text is black or
-white, whichever reads better; with neither it uses the accent colour.
-Icons: gift, info, megaphone, sparkles, shield. Lazy-loaded to stay inside
-the entry bundle budget.
+{ text, dismissable?, icon?, iconUrl?, background?, textColor?, id? }.
+Fixed by default; a dismissable one remembers it was closed per agent in
+this browser (same store as the feedback/consent flags). Colours are hex
+only (anything else is ignored); with only a background the text is black
+or white, whichever reads better; with neither it uses the accent colour.
+Icons: gift, info, megaphone, sparkles, shield, or your own image via an
+https iconUrl (non-https is ignored). Lazy-loaded to stay inside the entry
+bundle budget.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
 ---
- .../src/hooks/test/useRibbonDismiss.test.tsx  | 39 ++++++++++
+ .../src/hooks/test/useRibbonDismiss.test.tsx  | 39 ++++++++
  packages/widget/src/hooks/useChatWidget.ts    |  3 +
- packages/widget/src/hooks/useRibbonDismiss.ts | 49 ++++++++++++
+ packages/widget/src/hooks/useRibbonDismiss.ts | 49 ++++++++++
  packages/widget/src/main.tsx                  |  3 +
- .../molecules/banner/HeaderRibbon.test.tsx    | 41 ++++++++++
- .../src/molecules/banner/HeaderRibbon.tsx     | 30 ++++++++
- .../banner/HeaderRibbonView.test.tsx          | 46 +++++++++++
- .../src/molecules/banner/HeaderRibbonView.tsx | 76 +++++++++++++++++++
+ .../molecules/banner/HeaderRibbon.test.tsx    | 41 +++++++++
+ .../src/molecules/banner/HeaderRibbon.tsx     | 31 +++++++
+ .../banner/HeaderRibbonView.test.tsx          | 62 +++++++++++++
+ .../src/molecules/banner/HeaderRibbonView.tsx | 89 +++++++++++++++++++
  .../widget/src/organisms/WidgetContainer.tsx  | 10 +++
- packages/widget/src/types/ribbon.ts           | 18 +++++
- 10 files changed, 315 insertions(+)
+ packages/widget/src/types/ribbon.ts           | 20 +++++
+ 10 files changed, 347 insertions(+)
  create mode 100644 packages/widget/src/hooks/test/useRibbonDismiss.test.tsx
  create mode 100644 packages/widget/src/hooks/useRibbonDismiss.ts
  create mode 100644 packages/widget/src/molecules/banner/HeaderRibbon.test.tsx
@@ -225,10 +226,10 @@ index 0000000..727c905
 +});
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbon.tsx b/packages/widget/src/molecules/banner/HeaderRibbon.tsx
 new file mode 100644
-index 0000000..c53596a
+index 0000000..853b946
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbon.tsx
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,31 @@
 +import useMedAssistStore from "@/store/medAssistStore";
 +import { useRibbonDismiss } from "@/hooks/useRibbonDismiss";
 +import type { TRibbonConfig } from "@/types/ribbon";
@@ -252,6 +253,7 @@ index 0000000..c53596a
 +    <HeaderRibbonView
 +      text={text}
 +      icon={config.icon}
++      iconUrl={config.iconUrl}
 +      background={config.background}
 +      textColor={config.textColor}
 +      dismissable={dismissable}
@@ -261,10 +263,10 @@ index 0000000..c53596a
 +}
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx b/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx
 new file mode 100644
-index 0000000..71a42b3
+index 0000000..1ef002f
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbonView.test.tsx
-@@ -0,0 +1,46 @@
+@@ -0,0 +1,62 @@
 +import { describe, it, expect, vi } from "vitest";
 +import { render, screen, fireEvent } from "@testing-library/preact";
 +import HeaderRibbonView from "./HeaderRibbonView";
@@ -310,13 +312,29 @@ index 0000000..71a42b3
 +    render(<HeaderRibbonView text="Hello" background="red; display:none" textColor="url(x)" />);
 +    expect(screen.getByRole("status").getAttribute("style")).toBeNull();
 +  });
++
++  it("draws an uploaded icon from an https URL, ahead of the preset icon", () => {
++    const { container } = render(<HeaderRibbonView text="Hello" icon="gift" iconUrl="https://cdn.eka.care/offer.png" />);
++    const img = container.querySelector("img");
++    expect(img).not.toBeNull();
++    expect(img?.getAttribute("src")).toBe("https://cdn.eka.care/offer.png");
++    expect(img?.getAttribute("alt")).toBe("");
++  });
++
++  it("ignores an icon URL that is not https", () => {
++    for (const bad of ["http://cdn.eka.care/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA", "/a.png"]) {
++      const { container, unmount } = render(<HeaderRibbonView text="Hello" iconUrl={bad} />);
++      expect(container.querySelector("img")).toBeNull();
++      unmount();
++    }
++  });
 +});
 diff --git a/packages/widget/src/molecules/banner/HeaderRibbonView.tsx b/packages/widget/src/molecules/banner/HeaderRibbonView.tsx
 new file mode 100644
-index 0000000..ed75c9b
+index 0000000..c53d4bd
 --- /dev/null
 +++ b/packages/widget/src/molecules/banner/HeaderRibbonView.tsx
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,89 @@
 +import { Gift, Info, Megaphone, ShieldCheck, Sparkles, X } from "lucide-react";
 +import { cn } from "@/lib/utils";
 +import type { TRibbonConfig } from "@/types/ribbon";
@@ -330,6 +348,12 @@ index 0000000..ed75c9b
 +};
 +
 +const HEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
++
++/** The URL if it is https, else undefined (so the preset icon applies). */
++function httpsOrUndefined(value?: string): string | undefined {
++  const v = value?.trim();
++  return v && /^https:\/\//i.test(v) ? v : undefined;
++}
 +
 +/** The colour if it is `#rgb` / `#rrggbb`, else undefined (so the default applies). */
 +function hexOrUndefined(value?: string): string | undefined {
@@ -347,6 +371,7 @@ index 0000000..ed75c9b
 +interface HeaderRibbonViewProps {
 +  text: string;
 +  icon?: TRibbonConfig["icon"];
++  iconUrl?: string;
 +  background?: string;
 +  textColor?: string;
 +  /** Shows the close button. */
@@ -358,6 +383,7 @@ index 0000000..ed75c9b
 +export default function HeaderRibbonView({
 +  text,
 +  icon,
++  iconUrl,
 +  background,
 +  textColor,
 +  dismissable = false,
@@ -365,6 +391,7 @@ index 0000000..ed75c9b
 +  className,
 +}: HeaderRibbonViewProps) {
 +  const Icon = icon ? ICONS[icon] : undefined;
++  const customIcon = httpsOrUndefined(iconUrl);
 +  const bg = hexOrUndefined(background);
 +  const fg = hexOrUndefined(textColor) ?? (bg ? readableOn(bg) : undefined);
 +
@@ -377,7 +404,11 @@ index 0000000..ed75c9b
 +        className
 +      )}
 +    >
-+      {Icon && <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />}
++      {customIcon ? (
++        <img src={customIcon} alt="" width={16} height={16} className="w-4 h-4 flex-shrink-0 rounded-sm object-cover" />
++      ) : (
++        Icon && <Icon className="w-4 h-4 flex-shrink-0" aria-hidden="true" />
++      )}
 +      <span className="flex-1 min-w-0 text-balance">{text}</span>
 +      {dismissable && (
 +        <button
@@ -437,10 +468,10 @@ index e2ebf4c..5799b1a 100644
              // inside the empty-state stack on fullscreen) or in the footer.
 diff --git a/packages/widget/src/types/ribbon.ts b/packages/widget/src/types/ribbon.ts
 new file mode 100644
-index 0000000..20d9b8c
+index 0000000..8a2d2f8
 --- /dev/null
 +++ b/packages/widget/src/types/ribbon.ts
-@@ -0,0 +1,18 @@
+@@ -0,0 +1,20 @@
 +/**
 + * Header ribbon: a one-line message under the header. Host `theme.ribbon`
 + * (embed `theme` attribute / `init({ theme })`), or the agent-config API.
@@ -452,6 +483,8 @@ index 0000000..20d9b8c
 +  dismissable?: boolean;
 +  /** Small icon before the text. Default none. */
 +  icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield";
++  /** Your own icon: an https image URL (uploaded in the console). Wins over `icon`. Anything that is not https is ignored. */
++  iconUrl?: string;
 +  /** Background colour as hex (`#rgb` or `#rrggbb`). Default: the agent's accent colour. Anything else is ignored. */
 +  background?: string;
 +  /** Text and icon colour as hex. Default: black or white, whichever reads better on the background. Anything else is ignored. */

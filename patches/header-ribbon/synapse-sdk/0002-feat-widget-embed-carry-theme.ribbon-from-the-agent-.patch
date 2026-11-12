@@ -1,4 +1,4 @@
-From c72f98e5a4e354b947e5071d8756a651de23ceb5 Mon Sep 17 00:00:00 2001
+From e40e17c9075683a7a139d9cdcc82a3a6de808dda Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:50:02 +0000
 Subject: [PATCH 2/2] feat(widget-embed): carry theme.ribbon from the agent
@@ -11,14 +11,14 @@ into the widget theme. Host theme attribute / init({ theme }) still wins.
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
 ---
- packages/widget-embed/index.ts | 23 +++++++++++++++++++++++
- 1 file changed, 23 insertions(+)
+ packages/widget-embed/index.ts | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
 
 diff --git a/packages/widget-embed/index.ts b/packages/widget-embed/index.ts
-index b408a0e..5943a88 100644
+index b408a0e..1d20d25 100644
 --- a/packages/widget-embed/index.ts
 +++ b/packages/widget-embed/index.ts
-@@ -72,6 +72,17 @@ type AgentConfig = {
+@@ -72,6 +72,19 @@ type AgentConfig = {
      icon_img?: string
      nudge_color?: string;
      tagline?: string;
@@ -27,6 +27,8 @@ index b408a0e..5943a88 100644
 +      text?: string;
 +      dismissable?: boolean;
 +      icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield";
++      /** Uploaded icon (https image URL). Wins over `icon`. */
++      icon_img?: string;
 +      /** Hex colour. Absent -> the accent colour. */
 +      background?: string;
 +      /** Hex colour. Absent -> black or white, whichever reads better. */
@@ -36,16 +38,16 @@ index b408a0e..5943a88 100644
      hide_watermark?: boolean;
      explicit_disclaimer?: boolean;
      /** Host-supplied consent/disclaimer copy (paragraph list, or one blob with newlines). Absent -> the widget's built-in copy. */
-@@ -139,6 +150,8 @@ type MedAssistInitConfig = {
+@@ -139,6 +152,8 @@ type MedAssistInitConfig = {
      headerTinted?: boolean;
      titleImg?: string;
      tagline?: string;
 +    /** Header ribbon (see the widget package's `TRibbonConfig`). */
-+    ribbon?: { text: string; dismissable?: boolean; icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield"; background?: string; textColor?: string; id?: string };
++    ribbon?: { text: string; dismissable?: boolean; icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield"; iconUrl?: string; background?: string; textColor?: string; id?: string };
      explicitDisclaimer?: boolean;
      consentContent?: string | string[];
      upfrontConsent?: boolean;
-@@ -166,6 +179,16 @@ function mapAgentConfigThemeToWidgetTheme(apiTheme: AgentConfig["theme"] | undef
+@@ -166,6 +181,17 @@ function mapAgentConfigThemeToWidgetTheme(apiTheme: AgentConfig["theme"] | undef
      ...(apiTheme.header_tinted !== undefined && { headerTinted: apiTheme.header_tinted }),
      ...(apiTheme.title_img && { titleImg: apiTheme.title_img }),
      ...(apiTheme.tagline && { tagline: apiTheme.tagline }),
@@ -54,6 +56,7 @@ index b408a0e..5943a88 100644
 +        text: apiTheme.ribbon.text,
 +        ...(apiTheme.ribbon.dismissable !== undefined && { dismissable: apiTheme.ribbon.dismissable }),
 +        ...(apiTheme.ribbon.icon && { icon: apiTheme.ribbon.icon }),
++        ...(apiTheme.ribbon.icon_img && { iconUrl: apiTheme.ribbon.icon_img }),
 +        ...(apiTheme.ribbon.background && { background: apiTheme.ribbon.background }),
 +        ...(apiTheme.ribbon.text_color && { textColor: apiTheme.ribbon.text_color }),
 +        ...(apiTheme.ribbon.id && { id: apiTheme.ribbon.id }),

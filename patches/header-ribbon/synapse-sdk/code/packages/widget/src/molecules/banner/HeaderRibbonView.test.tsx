@@ -43,4 +43,20 @@ describe("HeaderRibbonView", () => {
     render(<HeaderRibbonView text="Hello" background="red; display:none" textColor="url(x)" />);
     expect(screen.getByRole("status").getAttribute("style")).toBeNull();
   });
+
+  it("draws an uploaded icon from an https URL, ahead of the preset icon", () => {
+    const { container } = render(<HeaderRibbonView text="Hello" icon="gift" iconUrl="https://cdn.eka.care/offer.png" />);
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toBe("https://cdn.eka.care/offer.png");
+    expect(img?.getAttribute("alt")).toBe("");
+  });
+
+  it("ignores an icon URL that is not https", () => {
+    for (const bad of ["http://cdn.eka.care/a.png", "javascript:alert(1)", "data:image/png;base64,AAAA", "/a.png"]) {
+      const { container, unmount } = render(<HeaderRibbonView text="Hello" iconUrl={bad} />);
+      expect(container.querySelector("img")).toBeNull();
+      unmount();
+    }
+  });
 });

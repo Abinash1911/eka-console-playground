@@ -77,6 +77,8 @@ type AgentConfig = {
       text?: string;
       dismissable?: boolean;
       icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield";
+      /** Uploaded icon (https image URL). Wins over `icon`. */
+      icon_img?: string;
       /** Hex colour. Absent -> the accent colour. */
       background?: string;
       /** Hex colour. Absent -> black or white, whichever reads better. */
@@ -151,7 +153,7 @@ type MedAssistInitConfig = {
     titleImg?: string;
     tagline?: string;
     /** Header ribbon (see the widget package's `TRibbonConfig`). */
-    ribbon?: { text: string; dismissable?: boolean; icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield"; background?: string; textColor?: string; id?: string };
+    ribbon?: { text: string; dismissable?: boolean; icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield"; iconUrl?: string; background?: string; textColor?: string; id?: string };
     explicitDisclaimer?: boolean;
     consentContent?: string | string[];
     upfrontConsent?: boolean;
@@ -184,6 +186,7 @@ function mapAgentConfigThemeToWidgetTheme(apiTheme: AgentConfig["theme"] | undef
         text: apiTheme.ribbon.text,
         ...(apiTheme.ribbon.dismissable !== undefined && { dismissable: apiTheme.ribbon.dismissable }),
         ...(apiTheme.ribbon.icon && { icon: apiTheme.ribbon.icon }),
+        ...(apiTheme.ribbon.icon_img && { iconUrl: apiTheme.ribbon.icon_img }),
         ...(apiTheme.ribbon.background && { background: apiTheme.ribbon.background }),
         ...(apiTheme.ribbon.text_color && { textColor: apiTheme.ribbon.text_color }),
         ...(apiTheme.ribbon.id && { id: apiTheme.ribbon.id }),

@@ -1,33 +1,36 @@
-From b62f4ac3e3d801b9e073836df5e4ab873e361540 Mon Sep 17 00:00:00 2001
+From 4d0b9fa8ae1f475babbcc69b4217ca55cf3b54c4 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:52:26 +0000
 Subject: [PATCH] feat(agents): header ribbon settings in the agent's General
  tab
 
 Adds a Header Ribbon block to the Appearance form: text (empty turns it
-off), icon, dismissable or always shown, background and text colour with a
-live preview. Saved as theme.ribbon in the agent's theme JSON
-({text, dismissable, icon?, background?, text_color?}); the agent-config API
-returns theme as-is, and the widget loader maps it (synapse-sdk). Hex colours
-and a fixed icon list are enforced on save. No migration.
+off), icon (preset, or upload your own image / https URL), dismissable or
+always shown, background and text colour, with a live preview. Saved as
+theme.ribbon in the agent's theme JSON ({text, dismissable, icon? or
+icon_img?, background?, text_color?}); the agent-config API returns theme
+as-is, and the widget loader maps it (synapse-sdk). Hex colours, a fixed
+icon list, https-only icon URLs, and image type / 1 MB limits for uploads
+are enforced on save. The upload goes to public storage like the other
+theme images. No migration.
 
 Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
 ---
- agents/schemas/theme.py      |  12 +++++
- agents/services/ribbon.py    |  35 ++++++++++++
- agents/test_ribbon.py        |  61 +++++++++++++++++++++
- agents/views/agent.py        |   7 +++
- templates/agents/detail.html | 100 +++++++++++++++++++++++++++++++++++
- 5 files changed, 215 insertions(+)
+ agents/schemas/theme.py      |  13 +++
+ agents/services/ribbon.py    |  62 ++++++++++++++
+ agents/test_ribbon.py        | 143 ++++++++++++++++++++++++++++++++
+ agents/views/agent.py        |  13 +++
+ templates/agents/detail.html | 156 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 387 insertions(+)
  create mode 100644 agents/services/ribbon.py
  create mode 100644 agents/test_ribbon.py
 
 diff --git a/agents/schemas/theme.py b/agents/schemas/theme.py
-index 727c5f9..a85bb31 100644
+index 727c5f9..066bad5 100644
 --- a/agents/schemas/theme.py
 +++ b/agents/schemas/theme.py
-@@ -3,6 +3,17 @@ from typing import Literal, Optional
+@@ -3,6 +3,18 @@ from typing import Literal, Optional
  from pydantic import BaseModel
  
  
@@ -37,6 +40,7 @@ index 727c5f9..a85bb31 100644
 +    text: str
 +    dismissable: bool = False
 +    icon: Optional[Literal["gift", "info", "megaphone", "sparkles", "shield"]] = None
++    icon_img: Optional[str] = None  # uploaded icon (https image URL); wins over `icon`
 +    background: Optional[str] = None  # hex; absent -> the accent colour
 +    text_color: Optional[str] = None  # hex; absent -> black or white, whichever reads better
 +    id: Optional[str] = None  # change to show it again to people who closed an older one
@@ -45,34 +49,59 @@ index 727c5f9..a85bb31 100644
  class ThemeConfig(BaseModel):
      """UI theme configuration stored in agent_configs.theme JSONB."""
  
-@@ -14,3 +25,4 @@ class ThemeConfig(BaseModel):
+@@ -14,3 +26,4 @@ class ThemeConfig(BaseModel):
      assistant_icon: Optional[str] = None
      header_tinted: Optional[bool] = None
      nudge_color: Optional[str] = None
 +    ribbon: Optional[RibbonConfig] = None
 diff --git a/agents/services/ribbon.py b/agents/services/ribbon.py
 new file mode 100644
-index 0000000..51434ae
+index 0000000..9ac2a99
 --- /dev/null
 +++ b/agents/services/ribbon.py
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,62 @@
 +"""Widget header ribbon (`theme.ribbon`): read the Appearance form into the theme JSON.
 +
 +Pure Python, so it is tested without a database. The widget reads the saved
-+shape through the agent-config API: text, dismissable, icon, background,
-+text_color (hex).
++shape through the agent-config API: text, dismissable, icon or icon_img (an
++uploaded image), background, text_color (hex).
 +"""
 +
 +import re
-+from typing import Optional
++from typing import Callable, Optional
 +
 +RIBBON_ICONS = ("gift", "info", "megaphone", "sparkles", "shield")
 +RIBBON_TEXT_MAX_LENGTH = 200
++RIBBON_ICON_MAX_BYTES = 1024 * 1024  # an uploaded icon is drawn at 16px; 1 MB is plenty
 +_HEX_COLOR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 +
 +
-+def build_ribbon(post) -> Optional[dict]:
-+    """The ribbon dict to store under `theme["ribbon"]`, or None when there is no text."""
++def resolve_icon_img(post, files, saved: Optional[str], save_file: Callable) -> Optional[str]:
++    """The URL for `theme["ribbon"]["icon_img"]`, or None.
++
++    Only when "Upload your own" is picked in the icon select. A new upload wins
++    over a pasted URL, which wins over the icon already saved; "clear" drops it.
++    The widget only draws https images, so a pasted http URL is not accepted.
++    `save_file(upload)` stores the file and returns its public URL.
++    """
++    if post.get("ribbon_icon") != "custom" or post.get("clear_ribbon_icon_img") == "1":
++        return None
++    upload = files.get("ribbon_icon_file")
++    if upload is not None and str(getattr(upload, "content_type", "")).startswith("image/") and (
++        getattr(upload, "size", 0) or 0
++    ) <= RIBBON_ICON_MAX_BYTES:
++        return save_file(upload)
++    url = (post.get("ribbon_icon_url", "") or "").strip()
++    if url.lower().startswith("https://"):
++        return url
++    return saved or None
++
++
++def build_ribbon(post, icon_img: Optional[str] = None) -> Optional[dict]:
++    """The ribbon dict to store under `theme["ribbon"]`, or None when there is no text.
++
++    `icon_img` is the uploaded icon's URL from `resolve_icon_img`; it replaces the preset icon.
++    """
 +    text = (post.get("ribbon_text", "") or "").strip()[:RIBBON_TEXT_MAX_LENGTH]
 +    if not text:
 +        return None
@@ -82,7 +111,9 @@ index 0000000..51434ae
 +        "dismissable": post.get("ribbon_dismissable", "") == "1",
 +    }
 +    icon = post.get("ribbon_icon", "")
-+    if icon in RIBBON_ICONS:
++    if icon_img:
++        ribbon["icon_img"] = icon_img
++    elif icon in RIBBON_ICONS:
 +        ribbon["icon"] = icon
 +    background = (post.get("ribbon_background", "") or "").strip()
 +    if _HEX_COLOR.match(background):
@@ -93,15 +124,22 @@ index 0000000..51434ae
 +    return ribbon
 diff --git a/agents/test_ribbon.py b/agents/test_ribbon.py
 new file mode 100644
-index 0000000..8550a46
+index 0000000..8cf76e5
 --- /dev/null
 +++ b/agents/test_ribbon.py
-@@ -0,0 +1,61 @@
+@@ -0,0 +1,143 @@
 +"""Widget header ribbon settings (`agents.services.ribbon`). DB-free."""
++
++from types import SimpleNamespace
 +
 +from django.test import SimpleTestCase
 +
-+from agents.services.ribbon import RIBBON_TEXT_MAX_LENGTH, build_ribbon
++from agents.services.ribbon import (
++    RIBBON_ICON_MAX_BYTES,
++    RIBBON_TEXT_MAX_LENGTH,
++    build_ribbon,
++    resolve_icon_img,
++)
 +
 +
 +class BuildRibbonTests(SimpleTestCase):
@@ -158,24 +196,105 @@ index 0000000..8550a46
 +    def test_text_is_capped(self):
 +        ribbon = build_ribbon({"ribbon_text": "x" * (RIBBON_TEXT_MAX_LENGTH + 50)})
 +        self.assertEqual(len(ribbon["text"]), RIBBON_TEXT_MAX_LENGTH)
++
++    def test_uploaded_icon_replaces_the_preset(self):
++        ribbon = build_ribbon(
++            {"ribbon_text": "Hi", "ribbon_icon": "custom"}, icon_img="https://cdn.eka.care/r.png"
++        )
++        self.assertEqual(ribbon["icon_img"], "https://cdn.eka.care/r.png")
++        self.assertNotIn("icon", ribbon)
++        # "custom" is not a preset, and no image means no icon at all.
++        self.assertNotIn("icon", build_ribbon({"ribbon_text": "Hi", "ribbon_icon": "custom"}))
++
++
++def _upload(name="r.png", content_type="image/png", size=1000):
++    return SimpleNamespace(name=name, content_type=content_type, size=size)
++
++
++class ResolveIconImgTests(SimpleTestCase):
++    def setUp(self):
++        self.saved_files = []
++
++        def save(upload):
++            self.saved_files.append(upload.name)
++            return f"https://cdn.eka.care/{upload.name}"
++
++        self.save = save
++
++    def resolve(self, post, files=None, saved=None):
++        return resolve_icon_img(post, files or {}, saved, self.save)
++
++    def test_only_when_upload_your_own_is_picked(self):
++        files = {"ribbon_icon_file": _upload()}
++        for icon in ("", "gift", "info"):
++            self.assertIsNone(self.resolve({"ribbon_icon": icon}, files, saved="https://x/y.png"))
++        self.assertEqual(self.saved_files, [])
++
++    def test_new_upload_is_saved_and_wins(self):
++        post = {"ribbon_icon": "custom", "ribbon_icon_url": "https://other/a.png"}
++        got = self.resolve(post, {"ribbon_icon_file": _upload("new.png")}, saved="https://old/o.png")
++        self.assertEqual(got, "https://cdn.eka.care/new.png")
++        self.assertEqual(self.saved_files, ["new.png"])
++
++    def test_pasted_https_url_is_used_without_saving(self):
++        post = {"ribbon_icon": "custom", "ribbon_icon_url": " https://cdn.eka.care/u.png "}
++        self.assertEqual(self.resolve(post, saved="https://old/o.png"), "https://cdn.eka.care/u.png")
++        self.assertEqual(self.saved_files, [])
++
++    def test_http_and_other_urls_are_not_accepted(self):
++        for bad in ("http://cdn.eka.care/u.png", "javascript:alert(1)", "/media/u.png", "data:image/png;base64,AA"):
++            got = self.resolve({"ribbon_icon": "custom", "ribbon_icon_url": bad})
++            self.assertIsNone(got)
++
++    def test_keeps_the_saved_icon_when_nothing_new_is_given(self):
++        self.assertEqual(
++            self.resolve({"ribbon_icon": "custom"}, saved="https://cdn.eka.care/old.png"),
++            "https://cdn.eka.care/old.png",
++        )
++        self.assertIsNone(self.resolve({"ribbon_icon": "custom"}))
++
++    def test_clear_drops_it(self):
++        post = {"ribbon_icon": "custom", "clear_ribbon_icon_img": "1"}
++        self.assertIsNone(self.resolve(post, {"ribbon_icon_file": _upload()}, saved="https://old/o.png"))
++        self.assertEqual(self.saved_files, [])
++
++    def test_rejects_non_images_and_large_files(self):
++        post = {"ribbon_icon": "custom"}
++        for bad in (
++            _upload("a.html", "text/html"),
++            _upload("a.png", "image/png", RIBBON_ICON_MAX_BYTES + 1),
++        ):
++            self.assertIsNone(self.resolve(post, {"ribbon_icon_file": bad}))
++        self.assertEqual(self.saved_files, [])
++        # A bad upload does not wipe the icon already saved.
++        self.assertEqual(
++            self.resolve(post, {"ribbon_icon_file": _upload("a.html", "text/html")}, saved="https://old/o.png"),
++            "https://old/o.png",
++        )
 diff --git a/agents/views/agent.py b/agents/views/agent.py
-index 889f2cb..93954f2 100644
+index 889f2cb..954ccfc 100644
 --- a/agents/views/agent.py
 +++ b/agents/views/agent.py
 @@ -24,6 +24,7 @@ from ..models import (
      LLMModel,
      AgentLLM,
  )
-+from agents.services.ribbon import build_ribbon
++from agents.services.ribbon import build_ribbon, resolve_icon_img
  from services.langfuse_service import create_or_update_prompt, get_prompt_versions
  from core.logging import get_logger
  from core.region import current_region
-@@ -739,6 +740,12 @@ def update(request, pk):
+@@ -739,6 +740,18 @@ def update(request, pk):
  
      theme["header_tinted"] = theme_header_tinted
  
 +    # Header ribbon: no text clears it (the other ribbon fields are then dropped).
-+    if ribbon := build_ribbon(request.POST):
++    ribbon_icon_img = resolve_icon_img(
++        request.POST,
++        request.FILES,
++        (theme.get("ribbon") or {}).get("icon_img"),
++        lambda upload: _save_theme_image(request.workspace_id, agent.id, "ribbon_icon", upload),
++    )
++    if ribbon := build_ribbon(request.POST, icon_img=ribbon_icon_img):
 +        theme["ribbon"] = ribbon
 +    else:
 +        theme.pop("ribbon", None)
@@ -184,28 +303,46 @@ index 889f2cb..93954f2 100644
          if clear_flag:
              theme.pop(theme_key, None)
 diff --git a/templates/agents/detail.html b/templates/agents/detail.html
-index 76fb762..cb0641b 100644
+index 76fb762..4311305 100644
 --- a/templates/agents/detail.html
 +++ b/templates/agents/detail.html
-@@ -60,6 +60,11 @@
+@@ -60,6 +60,12 @@
          accentColor: _ti.accent || '',
          nudgeColor: _ti.nudge_color || '',
          headerTinted: !!_ti.header_tinted,
 +        ribbonText: (_ti.ribbon && _ti.ribbon.text) || '',
 +        ribbonDismissable: !!(_ti.ribbon && _ti.ribbon.dismissable),
-+        ribbonIcon: (_ti.ribbon && _ti.ribbon.icon) || '',
++        ribbonIcon: (_ti.ribbon && (_ti.ribbon.icon_img ? 'custom' : _ti.ribbon.icon)) || '',
++        ribbonIconImg: (_ti.ribbon && _ti.ribbon.icon_img) || '',
 +        ribbonBackground: (_ti.ribbon && _ti.ribbon.background) || '',
 +        ribbonTextColor: (_ti.ribbon && _ti.ribbon.text_color) || '',
          titleImgPreview: _ti.title_img || '',
          backgroundImgPreview: _ti.background_img || '',
          assistantIconPreview: _ti.assistant_icon || '',
-@@ -135,6 +140,22 @@
+@@ -135,6 +141,39 @@
      accentColor: window._agentThemeInit.accentColor,
      nudgeColor: window._agentThemeInit.nudgeColor,
      headerTinted: window._agentThemeInit.headerTinted,
 +    ribbonText: window._agentThemeInit.ribbonText,
 +    ribbonDismissable: window._agentThemeInit.ribbonDismissable,
 +    ribbonIcon: window._agentThemeInit.ribbonIcon,
++    ribbonIconImg: window._agentThemeInit.ribbonIconImg,
++    ribbonIconMode: 'upload',
++    ribbonIconUrl: '',
++    ribbonIconFilePreview: '',
++    clearRibbonIconImg: false,
++    ribbonIconPicked(event) {
++        const file = event.target.files && event.target.files[0];
++        this.ribbonIconFilePreview = file ? URL.createObjectURL(file) : '';
++        if (file) this.clearRibbonIconImg = false;
++    },
++    // What the uploaded icon will look like: the new file, a valid https URL, or the icon already saved.
++    ribbonIconSrc() {
++        if (this.clearRibbonIconImg) return '';
++        if (this.ribbonIconMode === 'url' && /^https:\/\//.test(this.ribbonIconUrl)) return this.ribbonIconUrl;
++        if (this.ribbonIconMode === 'upload' && this.ribbonIconFilePreview) return this.ribbonIconFilePreview;
++        return this.ribbonIconImg;
++    },
 +    ribbonBackground: window._agentThemeInit.ribbonBackground,
 +    ribbonTextColor: window._agentThemeInit.ribbonTextColor,
 +    // Same rule as the widget: black or white, whichever reads better on the background.
@@ -222,7 +359,7 @@ index 76fb762..cb0641b 100644
      titleImgPreview: window._agentThemeInit.titleImgPreview,
      backgroundImgPreview: window._agentThemeInit.backgroundImgPreview,
      assistantIconPreview: window._agentThemeInit.assistantIconPreview,
-@@ -1789,6 +1810,85 @@
+@@ -1789,6 +1828,123 @@
                      <input type="hidden" name="theme_header_tinted" :value="headerTinted ? '1' : ''">
                  </div>
  
@@ -247,7 +384,43 @@ index 76fb762..cb0641b 100644
 +                                    <option value="megaphone">Megaphone</option>
 +                                    <option value="sparkles">Sparkles</option>
 +                                    <option value="shield">Shield</option>
++                                    <option value="custom">Upload your own</option>
 +                                </select>
++                                <div x-show="ribbonIcon === 'custom'" x-cloak class="flex flex-col gap-1.5">
++                                    <div class="flex items-center gap-3">
++                                        <div class="relative w-10 h-10 flex-shrink-0 rounded-lg bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
++                                            <img x-show="ribbonIconSrc()" :src="ribbonIconSrc()" alt="Ribbon icon" class="w-full h-full object-cover">
++                                            <i x-show="!ribbonIconSrc()" data-lucide="image" class="w-5 h-5 text-gray-400"></i>
++                                        </div>
++                                        <button type="button" x-show="ribbonIconSrc()" @click="clearRibbonIconImg = true; ribbonIconFilePreview = ''; ribbonIconUrl = ''" aria-label="Remove ribbon icon"
++                                                class="w-5 h-5 bg-white border border-gray-300 rounded-full flex items-center justify-center shadow-sm hover:bg-red-50 hover:border-red-300 transition-colors">
++                                            <i data-lucide="x" class="w-3 h-3 text-gray-500"></i>
++                                        </button>
++                                        <div class="flex gap-1">
++                                            <button type="button" @click="ribbonIconMode = 'upload'"
++                                                    :class="ribbonIconMode === 'upload' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
++                                                    class="flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium transition-colors">
++                                                <i data-lucide="upload" class="w-3 h-3"></i> Upload
++                                            </button>
++                                            <button type="button" @click="ribbonIconMode = 'url'"
++                                                    :class="ribbonIconMode === 'url' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'"
++                                                    class="flex items-center gap-1 px-2 py-1 rounded border text-xs font-medium transition-colors">
++                                                <i data-lucide="link" class="w-3 h-3"></i> URL
++                                            </button>
++                                        </div>
++                                    </div>
++                                    <input type="file" name="ribbon_icon_file" accept="image/*" x-show="ribbonIconMode === 'upload'"
++                                           @change="ribbonIconPicked($event)"
++                                           class="block w-full text-xs text-gray-600 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border file:border-gray-300 file:text-xs file:font-medium file:bg-white file:text-gray-700 hover:file:bg-gray-50">
++                                    <div x-show="ribbonIconMode === 'url'" x-cloak>
++                                        <input type="text" x-model="ribbonIconUrl" placeholder="https://..."
++                                               @input="clearRibbonIconImg = false"
++                                               :class="ribbonIconUrl && !/^https:\/\//.test(ribbonIconUrl) ? 'border-red-400 focus:ring-red-400' : 'border-gray-300 focus:ring-indigo-500'"
++                                               class="w-full px-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-1">
++                                        <p x-show="ribbonIconUrl && !/^https:\/\//.test(ribbonIconUrl)" class="text-xs text-red-500 mt-0.5">Enter a valid https:// URL</p>
++                                    </div>
++                                    <p class="text-xs text-gray-400">Square image, shown at 16px. Max 1 MB.</p>
++                                </div>
 +                            </div>
 +                            <div class="flex flex-col gap-1.5">
 +                                <label class="text-sm font-medium text-gray-700">Behavior</label>
@@ -294,13 +467,15 @@ index 76fb762..cb0641b 100644
 +                        <div class="flex flex-col gap-1.5">
 +                            <span class="text-xs font-semibold text-gray-700 uppercase tracking-wider">Preview</span>
 +                            <div class="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium" :style="ribbonPreviewStyle()">
-+                                <span x-show="ribbonIcon === 'gift'" x-cloak><i data-lucide="gift" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'info'" x-cloak><i data-lucide="info" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'megaphone'" x-cloak><i data-lucide="megaphone" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'sparkles'" x-cloak><i data-lucide="sparkles" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'shield'" x-cloak><i data-lucide="shield-check" class="w-4 h-4"></i></span>
++                                <img x-show="ribbonIcon === 'custom' && ribbonIconSrc()" x-cloak :src="ribbonIconSrc()" alt="" class="w-4 h-4 rounded-sm object-cover"><span x-show="ribbonIcon === 'gift'" x-cloak><i data-lucide="gift" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'info'" x-cloak><i data-lucide="info" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'megaphone'" x-cloak><i data-lucide="megaphone" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'sparkles'" x-cloak><i data-lucide="sparkles" class="w-4 h-4"></i></span><span x-show="ribbonIcon === 'shield'" x-cloak><i data-lucide="shield-check" class="w-4 h-4"></i></span>
 +                                <span class="flex-1 min-w-0" x-text="ribbonText"></span>
 +                                <span x-show="ribbonDismissable" x-cloak class="opacity-80"><i data-lucide="x" class="w-4 h-4"></i></span>
 +                            </div>
 +                        </div>
 +                    </div>
 +                    <input type="hidden" name="ribbon_dismissable" :value="ribbonDismissable ? '1' : ''">
++                    <input type="hidden" name="ribbon_icon_url" :value="ribbonIconMode === 'url' ? ribbonIconUrl : ''">
++                    <input type="hidden" name="clear_ribbon_icon_img" :value="clearRibbonIconImg ? '1' : ''">
 +                    <input type="hidden" name="ribbon_background" :value="ribbonBackground">
 +                    <input type="hidden" name="ribbon_text_color" :value="ribbonTextColor">
 +                </div>

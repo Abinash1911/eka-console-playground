@@ -24,7 +24,7 @@ from ..models import (
     LLMModel,
     AgentLLM,
 )
-from agents.services.ribbon import build_ribbon
+from agents.services.ribbon import build_ribbon, resolve_icon_img
 from services.langfuse_service import create_or_update_prompt, get_prompt_versions
 from core.logging import get_logger
 from core.region import current_region
@@ -741,7 +741,13 @@ def update(request, pk):
     theme["header_tinted"] = theme_header_tinted
 
     # Header ribbon: no text clears it (the other ribbon fields are then dropped).
-    if ribbon := build_ribbon(request.POST):
+    ribbon_icon_img = resolve_icon_img(
+        request.POST,
+        request.FILES,
+        (theme.get("ribbon") or {}).get("icon_img"),
+        lambda upload: _save_theme_image(request.workspace_id, agent.id, "ribbon_icon", upload),
+    )
+    if ribbon := build_ribbon(request.POST, icon_img=ribbon_icon_img):
         theme["ribbon"] = ribbon
     else:
         theme.pop("ribbon", None)

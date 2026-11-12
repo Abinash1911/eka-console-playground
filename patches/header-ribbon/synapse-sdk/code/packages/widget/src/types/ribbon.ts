@@ -9,6 +9,8 @@ export type TRibbonConfig = {
   dismissable?: boolean;
   /** Small icon before the text. Default none. */
   icon?: "gift" | "info" | "megaphone" | "sparkles" | "shield";
+  /** Your own icon: an https image URL (uploaded in the console). Wins over `icon`. Anything that is not https is ignored. */
+  iconUrl?: string;
   /** Background colour as hex (`#rgb` or `#rrggbb`). Default: the agent's accent colour. Anything else is ignored. */
   background?: string;
   /** Text and icon colour as hex. Default: black or white, whichever reads better on the background. Anything else is ignored. */
