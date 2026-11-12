@@ -1,0 +1,516 @@
+From 37ee778b4a87feb34eccf512e42e53f5e870065c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Thu, 12 Nov 2026 17:26:18 +0000
+Subject: [PATCH] feat(widget): welcome card (theme.welcomeCard)
+
+A card on the empty first screen, set by the host in theme.welcomeCard:
+{ title, body?, steps?, icon?, dismissable?, dismissLabel?, id? }. Shown
+until the user sends a message, in the floating, side-panel, mobile and
+full-page layouts. Fixed by default; a dismissable one remembers it was
+dismissed per agent in this browser (same store as the feedback/consent
+flags). Lazy-loaded to stay inside the entry bundle budget.
+
+Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
+---
+ .../hooks/test/useWelcomeCardDismiss.test.tsx | 39 ++++++++++
+ packages/widget/src/hooks/useChatWidget.ts    |  8 +++
+ .../widget/src/hooks/useWelcomeCardDismiss.ts | 49 +++++++++++++
+ packages/widget/src/main.tsx                  |  3 +
+ .../src/molecules/banner/WelcomeCard.test.tsx | 41 +++++++++++
+ .../src/molecules/banner/WelcomeCard.tsx      | 31 ++++++++
+ .../molecules/banner/WelcomeCardView.test.tsx | 42 +++++++++++
+ .../src/molecules/banner/WelcomeCardView.tsx  | 72 +++++++++++++++++++
+ .../molecules/chat/EmptyStateFullScreen.tsx   |  4 ++
+ packages/widget/src/organisms/ChatWidget.tsx  | 13 ++++
+ packages/widget/src/types/welcomeCard.ts      | 20 ++++++
+ 11 files changed, 322 insertions(+)
+ create mode 100644 packages/widget/src/hooks/test/useWelcomeCardDismiss.test.tsx
+ create mode 100644 packages/widget/src/hooks/useWelcomeCardDismiss.ts
+ create mode 100644 packages/widget/src/molecules/banner/WelcomeCard.test.tsx
+ create mode 100644 packages/widget/src/molecules/banner/WelcomeCard.tsx
+ create mode 100644 packages/widget/src/molecules/banner/WelcomeCardView.test.tsx
+ create mode 100644 packages/widget/src/molecules/banner/WelcomeCardView.tsx
+ create mode 100644 packages/widget/src/types/welcomeCard.ts
+
+diff --git a/packages/widget/src/hooks/test/useWelcomeCardDismiss.test.tsx b/packages/widget/src/hooks/test/useWelcomeCardDismiss.test.tsx
+new file mode 100644
+index 0000000..762fb97
+--- /dev/null
++++ b/packages/widget/src/hooks/test/useWelcomeCardDismiss.test.tsx
+@@ -0,0 +1,39 @@
++import { describe, it, expect, beforeEach } from "vitest";
++import { act, renderHook } from "@testing-library/preact";
++import { useWelcomeCardDismiss } from "@/hooks/useWelcomeCardDismiss";
++
++const STORE_KEY = "eka-medassist-agent-config";
++
++describe("useWelcomeCardDismiss", () => {
++  beforeEach(() => localStorage.clear());
++
++  it("is not dismissed by default", () => {
++    const { result } = renderHook(() => useWelcomeCardDismiss("agent-1", "welcome_card_dismissed:offer"));
++    expect(result.current.dismissed).toBe(false);
++  });
++
++  it("remembers a dismissal per agent and per key", () => {
++    const { result } = renderHook(() => useWelcomeCardDismiss("agent-1", "welcome_card_dismissed:offer"));
++    act(() => result.current.dismiss());
++    expect(result.current.dismissed).toBe(true);
++
++    expect(renderHook(() => useWelcomeCardDismiss("agent-1", "welcome_card_dismissed:offer")).result.current.dismissed).toBe(true);
++    expect(renderHook(() => useWelcomeCardDismiss("agent-2", "welcome_card_dismissed:offer")).result.current.dismissed).toBe(false);
++    expect(renderHook(() => useWelcomeCardDismiss("agent-1", "welcome_card_dismissed:new-offer")).result.current.dismissed).toBe(false);
++  });
++
++  it("keeps other flags in the shared store", () => {
++    localStorage.setItem(STORE_KEY, JSON.stringify({ "agent-1": { feedback_hidden: true } }));
++    const { result } = renderHook(() => useWelcomeCardDismiss("agent-1", "welcome_card_dismissed:offer"));
++    act(() => result.current.dismiss());
++    const store = JSON.parse(localStorage.getItem(STORE_KEY) as string);
++    expect(store["agent-1"]).toEqual({ feedback_hidden: true, "welcome_card_dismissed:offer": true });
++  });
++
++  it("does nothing without a key (fixed ribbon)", () => {
++    const { result } = renderHook(() => useWelcomeCardDismiss("agent-1", null));
++    act(() => result.current.dismiss());
++    expect(result.current.dismissed).toBe(false);
++    expect(localStorage.getItem(STORE_KEY)).toBeNull();
++  });
++});
+diff --git a/packages/widget/src/hooks/useChatWidget.ts b/packages/widget/src/hooks/useChatWidget.ts
+index 1885457..a98f4d0 100644
+--- a/packages/widget/src/hooks/useChatWidget.ts
++++ b/packages/widget/src/hooks/useChatWidget.ts
+@@ -32,6 +32,8 @@ import { resolveWidgetSize } from "@/lib/widgetSize";
+ import { useScrollManagement } from "@/hooks/useScrollManagement";
+ import { loadElicitationInput, loadFeedbackModal, loadWaitingTip, prefetchOnIdle } from "@/lib/prefetch";
+ import { COMPOSER_PLACEHOLDER_INTERVAL_MS, pickComposerPlaceholder } from "@/lib/composerPlaceholders";
++import { MessageSender } from "@/types/message";
++import type { TWelcomeCardConfig } from "@/types/welcomeCard";
+ 
+ export interface UseChatWidgetConfig {
+   title: string;
+@@ -99,6 +101,8 @@ export interface UseChatWidgetConfig {
+     overrideWidgetHeight?: number;
+     /** Where the floating (desktop "widget" mode) window opens: bottom-right "corner" (default) or "bottom-center". */
+     openFrom?: "corner" | "bottom-center";
++    /** Host `theme.welcomeCard`: a card on the empty first screen, fixed or dismissable. */
++    welcomeCard?: TWelcomeCardConfig;
+   };
+ }
+ 
+@@ -626,6 +630,9 @@ export function useChatWidget({ isOpen, agentId: agentIdProp, config }: UseChatW
+       !isLoadingSessionMessages;
+   }, [incomingMessages, hasInitialMessage, isLoadingSessionMessages])
+ 
++  // The welcome card is for the empty first screen: gone once the user has sent anything.
++  const hasUserMessage = incomingMessages.some((m) => m.role === MessageSender.USER);
++
+   const isAuthComponent = useMemo(() => {
+     if (!activeElicitation) return false;
+     return activeElicitation.component === SYNAPSE_COMPONENTS.MOBILE ||
+@@ -878,6 +885,7 @@ export function useChatWidget({ isOpen, agentId: agentIdProp, config }: UseChatW
+   // pre-built prop bundles instead of as loose duplicates.
+   return {
+     waitingTips,
++    hasUserMessage,
+     // State
+     showScrollButton,
+     isRestoring,
+diff --git a/packages/widget/src/hooks/useWelcomeCardDismiss.ts b/packages/widget/src/hooks/useWelcomeCardDismiss.ts
+new file mode 100644
+index 0000000..43823b5
+--- /dev/null
++++ b/packages/widget/src/hooks/useWelcomeCardDismiss.ts
+@@ -0,0 +1,49 @@
++import { useCallback, useMemo, useState } from "react";
++
++// Same per-agent store as the feedback / consent "ask once" flags in useChatWidget.
++const AGENT_CONFIG_CACHE_KEY = "eka-medassist-agent-config";
++
++function readFlag(agentId: string, flag: string): boolean {
++  try {
++    const raw = localStorage.getItem(AGENT_CONFIG_CACHE_KEY);
++    const store: Record<string, Record<string, unknown>> = raw ? JSON.parse(raw) : {};
++    return store[agentId]?.[flag] === true;
++  } catch {
++    return false;
++  }
++}
++
++function writeFlag(agentId: string, flag: string): void {
++  try {
++    const raw = localStorage.getItem(AGENT_CONFIG_CACHE_KEY);
++    const store: Record<string, Record<string, unknown>> = raw ? JSON.parse(raw) : {};
++    if (!store[agentId]) store[agentId] = {};
++    store[agentId][flag] = true;
++    localStorage.setItem(AGENT_CONFIG_CACHE_KEY, JSON.stringify(store));
++  } catch {
++    // non-critical; ignore storage errors
++  }
++}
++
++/**
++ * "Dismissed" memory for the welcome card. `key` is null when the welcome card is not
++ * dismissable (or absent): it then never reads or writes storage.
++ */
++export function useWelcomeCardDismiss(agentId: string, key: string | null) {
++  const [version, setVersion] = useState(0);
++
++  // `version` re-reads storage after dismiss() without keeping a second copy of the flag.
++  const dismissed = useMemo(
++    () => (key ? readFlag(agentId, key) : false),
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++    [agentId, key, version]
++  );
++
++  const dismiss = useCallback(() => {
++    if (!key) return;
++    writeFlag(agentId, key);
++    setVersion((v) => v + 1);
++  }, [agentId, key]);
++
++  return { dismissed, dismiss };
++}
+diff --git a/packages/widget/src/main.tsx b/packages/widget/src/main.tsx
+index 589160a..1ec69be 100644
+--- a/packages/widget/src/main.tsx
++++ b/packages/widget/src/main.tsx
+@@ -5,6 +5,7 @@ import App from "./App.tsx";
+ import { prefetchAgentConfig, prefetchTokenExchange } from "@synapse/core";
+ import type { AgentConfigResponse, ConnectionType, Environment, SYNAPSE_CONVERSATION, SynapseChannel, TContext, TInitialMessage, TokenExchangeResponse } from "@synapse/core";
+ import type { AgentFeedbackConfig } from "@/types/message";
++import type { TWelcomeCardConfig } from "@/types/welcomeCard";
+ import { buildStoreKey } from "@/store/medAssistStore";
+ 
+ export type MedAssistConfig = {
+@@ -84,6 +85,8 @@ export type MedAssistConfig = {
+     overrideWidgetHeight?: number;
+     /** Where the floating (desktop "widget" mode) window opens: bottom-right "corner" (default) or "bottom-center", on the spot the embed's chatbox launcher occupied. */
+     openFrom?: "corner" | "bottom-center";
++    /** Host `theme.welcomeCard`: a card on the empty first screen, fixed or dismissable. */
++    welcomeCard?: TWelcomeCardConfig;
+   };
+ }
+ declare global {
+diff --git a/packages/widget/src/molecules/banner/WelcomeCard.test.tsx b/packages/widget/src/molecules/banner/WelcomeCard.test.tsx
+new file mode 100644
+index 0000000..d07570b
+--- /dev/null
++++ b/packages/widget/src/molecules/banner/WelcomeCard.test.tsx
+@@ -0,0 +1,41 @@
++import { describe, it, expect, beforeEach } from "vitest";
++import { render, screen, fireEvent } from "@testing-library/preact";
++import useMedAssistStore from "@/store/medAssistStore";
++import WelcomeCard from "./WelcomeCard";
++
++describe("WelcomeCard", () => {
++  beforeEach(() => {
++    localStorage.clear();
++    useMedAssistStore.setState({ agentId: "agent-1" });
++  });
++
++  it("fixed: stays on screen and has no dismiss link", () => {
++    render(<WelcomeCard config={{ title: "Chat and earn ₹20" }} />);
++    expect(screen.getByRole("heading", { name: "Chat and earn ₹20" })).toBeInTheDocument();
++    expect(screen.queryByRole("button")).toBeNull();
++  });
++
++  it("dismissable: hides on click and stays hidden after a remount", () => {
++    const config = { title: "Chat and earn ₹20", dismissable: true };
++    const { unmount } = render(<WelcomeCard config={config} />);
++    fireEvent.click(screen.getByRole("button", { name: "Maybe later" }));
++    expect(screen.queryByRole("heading")).toBeNull();
++
++    unmount();
++    render(<WelcomeCard config={config} />);
++    expect(screen.queryByRole("heading")).toBeNull();
++  });
++
++  it("dismissable: a changed id shows it again", () => {
++    const { unmount } = render(<WelcomeCard config={{ title: "T", dismissable: true, id: "offer-1" }} />);
++    fireEvent.click(screen.getByRole("button", { name: "Maybe later" }));
++    unmount();
++    render(<WelcomeCard config={{ title: "T", dismissable: true, id: "offer-2" }} />);
++    expect(screen.getByRole("heading", { name: "T" })).toBeInTheDocument();
++  });
++
++  it("a fixed card never writes to storage", () => {
++    render(<WelcomeCard config={{ title: "T" }} />);
++    expect(localStorage.getItem("eka-medassist-agent-config")).toBeNull();
++  });
++});
+diff --git a/packages/widget/src/molecules/banner/WelcomeCard.tsx b/packages/widget/src/molecules/banner/WelcomeCard.tsx
+new file mode 100644
+index 0000000..f4a737e
+--- /dev/null
++++ b/packages/widget/src/molecules/banner/WelcomeCard.tsx
+@@ -0,0 +1,31 @@
++import useMedAssistStore from "@/store/medAssistStore";
++import { useWelcomeCardDismiss } from "@/hooks/useWelcomeCardDismiss";
++import type { TWelcomeCardConfig } from "@/types/welcomeCard";
++import WelcomeCardView from "./WelcomeCardView";
++
++/**
++ * The welcome card with its "dismissed" memory. Lazy-loaded by ChatWidget, so
++ * hosts that don't set `theme.welcomeCard` never download it.
++ */
++export default function WelcomeCard({ config }: { config: TWelcomeCardConfig }) {
++  const agentId = useMedAssistStore((s) => s.agentId);
++  const title = config.title.trim();
++  const dismissable = !!config.dismissable;
++  const { dismissed, dismiss } = useWelcomeCardDismiss(
++    agentId,
++    dismissable ? `welcome_card_dismissed:${config.id ?? title}` : null
++  );
++
++  if (dismissed) return null;
++  return (
++    <WelcomeCardView
++      title={title}
++      body={config.body}
++      steps={config.steps}
++      icon={config.icon}
++      dismissable={dismissable}
++      dismissLabel={config.dismissLabel}
++      onDismiss={dismiss}
++    />
++  );
++}
+diff --git a/packages/widget/src/molecules/banner/WelcomeCardView.test.tsx b/packages/widget/src/molecules/banner/WelcomeCardView.test.tsx
+new file mode 100644
+index 0000000..b8737b8
+--- /dev/null
++++ b/packages/widget/src/molecules/banner/WelcomeCardView.test.tsx
+@@ -0,0 +1,42 @@
++import { describe, it, expect, vi } from "vitest";
++import { render, screen, fireEvent } from "@testing-library/preact";
++import WelcomeCardView from "./WelcomeCardView";
++
++describe("WelcomeCardView", () => {
++  it("renders title and body", () => {
++    render(<WelcomeCardView title="Chat and earn ₹20" body="Send 2 messages." />);
++    expect(screen.getByRole("heading", { name: "Chat and earn ₹20" })).toBeInTheDocument();
++    expect(screen.getByText("Send 2 messages.")).toBeInTheDocument();
++  });
++
++  it("numbers up to three steps and ignores the rest and blanks", () => {
++    render(<WelcomeCardView title="T" steps={["Say hi", " ", "Ask more", "Get ₹20", "Extra"]} />);
++    const items = screen.getAllByRole("listitem");
++    expect(items).toHaveLength(3);
++    expect(items[0]).toHaveTextContent("1Say hi");
++    expect(items[2]).toHaveTextContent("3Get ₹20");
++    expect(screen.queryByText("Extra")).toBeNull();
++  });
++
++  it("draws no step list without steps", () => {
++    render(<WelcomeCardView title="T" />);
++    expect(screen.queryByRole("list")).toBeNull();
++  });
++
++  it("has no dismiss link when fixed", () => {
++    render(<WelcomeCardView title="T" />);
++    expect(screen.queryByRole("button")).toBeNull();
++  });
++
++  it("shows the dismiss link when dismissable and calls onDismiss", () => {
++    const onDismiss = vi.fn();
++    render(<WelcomeCardView title="T" dismissable onDismiss={onDismiss} />);
++    fireEvent.click(screen.getByRole("button", { name: "Maybe later" }));
++    expect(onDismiss).toHaveBeenCalledTimes(1);
++  });
++
++  it("uses a custom dismiss label", () => {
++    render(<WelcomeCardView title="T" dismissable dismissLabel="Not now" />);
++    expect(screen.getByRole("button", { name: "Not now" })).toBeInTheDocument();
++  });
++});
+diff --git a/packages/widget/src/molecules/banner/WelcomeCardView.tsx b/packages/widget/src/molecules/banner/WelcomeCardView.tsx
+new file mode 100644
+index 0000000..4f94a31
+--- /dev/null
++++ b/packages/widget/src/molecules/banner/WelcomeCardView.tsx
+@@ -0,0 +1,72 @@
++import { Gift, Info } from "lucide-react";
++import { cn } from "@/lib/utils";
++import type { TWelcomeCardConfig } from "@/types/welcomeCard";
++
++const MAX_STEPS = 3;
++
++interface WelcomeCardViewProps {
++  title: string;
++  body?: string;
++  steps?: string[];
++  icon?: TWelcomeCardConfig["icon"];
++  dismissable?: boolean;
++  dismissLabel?: string;
++  onDismiss?: () => void;
++  className?: string;
++}
++
++export default function WelcomeCardView({
++  title,
++  body,
++  steps,
++  icon = "gift",
++  dismissable = false,
++  dismissLabel = "Maybe later",
++  onDismiss,
++  className,
++}: WelcomeCardViewProps) {
++  const Icon = icon === "gift" ? Gift : icon === "info" ? Info : null;
++  const shownSteps = (steps ?? []).filter((s) => s.trim()).slice(0, MAX_STEPS);
++
++  return (
++    <section
++      aria-label={title}
++      className={cn(
++        "synapse-welcome-card flex flex-col items-center gap-2 rounded-2xl border border-border-subtle bg-surface px-4 pt-5 pb-3 text-center shadow-sm",
++        className
++      )}
++    >
++      {Icon && (
++        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground">
++          <Icon className="w-6 h-6" aria-hidden="true" />
++        </div>
++      )}
++      <h3 className="text-base font-semibold text-text-primary">{title}</h3>
++      {body && <p className="text-sm text-text-secondary text-balance">{body}</p>}
++      {shownSteps.length > 0 && (
++        <ol className="mt-1 flex w-full justify-center gap-4">
++          {shownSteps.map((step, i) => (
++            <li key={`${step}-${i}`} className="flex w-20 flex-col items-center gap-1 text-xs text-text-secondary">
++              <span
++                className="flex h-6 w-6 items-center justify-center rounded-full font-semibold text-primary"
++                style={{ backgroundColor: "hsl(var(--primary) / 0.1)" }}
++              >
++                {i + 1}
++              </span>
++              {step}
++            </li>
++          ))}
++        </ol>
++      )}
++      {dismissable && (
++        <button
++          type="button"
++          onClick={onDismiss}
++          className="mt-1 text-xs text-text-secondary underline underline-offset-2"
++        >
++          {dismissLabel}
++        </button>
++      )}
++    </section>
++  );
++}
+diff --git a/packages/widget/src/molecules/chat/EmptyStateFullScreen.tsx b/packages/widget/src/molecules/chat/EmptyStateFullScreen.tsx
+index 1fea2fc..90466f3 100644
+--- a/packages/widget/src/molecules/chat/EmptyStateFullScreen.tsx
++++ b/packages/widget/src/molecules/chat/EmptyStateFullScreen.tsx
+@@ -33,6 +33,8 @@ interface EmptyStateFullScreenProps {
+   /** Connection-status / retry banner — rendered above the composer card so the
+    * user can recover from disconnects while still on the empty-state screen. */
+   connectionBanner?: ReactNode;
++  /** Welcome card (host `theme.welcomeCard`) — rendered above the greeting. */
++  welcomeCard?: ReactNode;
+ }
+ 
+ export default function EmptyStateFullScreen({
+@@ -43,6 +45,7 @@ export default function EmptyStateFullScreen({
+   composer,
+   composerFooter,
+   connectionBanner,
++  welcomeCard,
+ }: EmptyStateFullScreenProps) {
+   const handleClick = (suggestion: Suggestion) => {
+     const label = suggestion.label || suggestion.value || "";
+@@ -56,6 +59,7 @@ export default function EmptyStateFullScreen({
+   return (
+     <div className="flex-1 flex flex-col overflow-y-auto">
+       <div className="flex flex-col items-stretch gap-6 w-full max-w-2xl mx-auto my-auto px-4 py-6">
++        {welcomeCard}
+         <div className="flex flex-col px-3 gap-2 items-start">
+           {description && description?.trim?.()?.length <= DESCRIPTION_MAX_LENGTH && (
+             <h2
+diff --git a/packages/widget/src/organisms/ChatWidget.tsx b/packages/widget/src/organisms/ChatWidget.tsx
+index e4927a7..0dc0dd6 100644
+--- a/packages/widget/src/organisms/ChatWidget.tsx
++++ b/packages/widget/src/organisms/ChatWidget.tsx
+@@ -5,6 +5,8 @@ import { ChevronDown } from "lucide-react";
+ import { cn } from "../lib/utils";
+ import WidgetContainer from "./WidgetContainer";
+ const VoiceAgentScreen = lazy(() => import("@/molecules/voice/VoiceAgentScreen"));
++// Only hosts that set `theme.welcomeCard` ever load it.
++const WelcomeCard = lazy(() => import("@/molecules/banner/WelcomeCard"));
+ import SessionList from "@/molecules/sidebar/SessionList";
+ import EmptyStateFullScreen from "@/molecules/chat/EmptyStateFullScreen";
+ import { SessionTranscriptSkeleton } from "@/atoms/Skeleton";
+@@ -31,6 +33,7 @@ export default function ChatWidget({
+   config,
+ }: ChatWidgetProps) {
+   const {
++    hasUserMessage,
+     toggleDisplayMode,
+     resolvedMode,
+     scrollAreaRef,
+@@ -134,6 +137,14 @@ export default function ChatWidget({
+ 
+   // One props object for the two ConnectionStatusBanner instances (empty-state
+   // and chat footer) so they can't drift apart.
++  const welcomeCardConfig = config.theme?.welcomeCard;
++  const welcomeCardNode =
++    welcomeCardConfig?.title?.trim() && !hasUserMessage && !isLoadingSessionMessages ? (
++      <Suspense fallback={null}>
++        <WelcomeCard config={welcomeCardConfig} />
++      </Suspense>
++    ) : null;
++
+   const connectionBannerProps = useMemo(() => ({
+     onRetry: handleRetry,
+     showRetryButton,
+@@ -223,6 +234,7 @@ export default function ChatWidget({
+                 composer={slots.composer}
+                 composerFooter={slots.composerFooter}
+                 connectionBanner={<ConnectionStatusBanner {...connectionBannerProps} />}
++                welcomeCard={welcomeCardNode}
+               />
+             )
+             : undefined
+@@ -282,6 +294,7 @@ export default function ChatWidget({
+                     <SessionTranscriptSkeleton />
+                   ) : (
+                     <>
++                      {welcomeCardNode}
+                       {isFirstMessage && (
+                         <div className="text-xs text-[var(--color-muted-foreground)] text-center mb-2">
+                           Just now
+diff --git a/packages/widget/src/types/welcomeCard.ts b/packages/widget/src/types/welcomeCard.ts
+new file mode 100644
+index 0000000..be533b3
+--- /dev/null
++++ b/packages/widget/src/types/welcomeCard.ts
+@@ -0,0 +1,20 @@
++/**
++ * Welcome card: a card on the empty first screen, gone once the user sends a
++ * message. Host `theme.welcomeCard` (embed `theme` attribute / `init({ theme })`).
++ */
++export type TWelcomeCardConfig = {
++  /** Headline. Empty or missing -> no card. */
++  title: string;
++  /** One or two sentences under the headline. */
++  body?: string;
++  /** Up to three short step labels, drawn as numbered circles. */
++  steps?: string[];
++  /** Icon tile above the headline. Default "gift". */
++  icon?: "gift" | "info" | "none";
++  /** Shows a "maybe later" link; once used the card stays hidden for this agent in this browser. Default false (fixed). */
++  dismissable?: boolean;
++  /** Text of the dismiss link. Default "Maybe later". */
++  dismissLabel?: string;
++  /** Identifies the card for "dismissed" memory. Change it to show the card again to people who dismissed an older one. Defaults to `title`. */
++  id?: string;
++};
+-- 
+2.43.0
+
