@@ -116,3 +116,6 @@ Link-button cards (all CTAs are https links, none run a tool) and the doctor ste
 
 ## 2026-11-03: new project agents-scribe (context only)
 Stored the Diabetica 7-step journey (from the deck) and the per-step handoff and API gap map (from the diagram, API table read from developer.eka.care on 3 Nov 2026, not tested) under `projects/agents-scribe/`. Deck and diagram themselves are not committed (customer and internal material). No code, no repos read yet.
+
+## 2026-11-12: widget mock prototype (`prototypes/widget/`)
+Real widget (synapse-sdk `9a9dabb`) rendered in a browser on the repo's own `MockSynapseSDK`; sending a message gets a canned reply plus a pill. Added only: vitest `vi` shim, a `voice` stub (widget crashed without it), the canned reply. Verified: page loads, no console errors, message + reply + pill seen in a screenshot. Not tested: other components, mobile, full-screen mode, real backend.
