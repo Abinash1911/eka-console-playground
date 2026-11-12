@@ -1888,17 +1888,22 @@
                                 </div>
                             </div>
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-sm font-medium text-gray-700">Behavior</label>
-                                <div class="flex items-center justify-between gap-3 h-[38px]">
-                                    <span class="text-xs text-gray-600" x-text="ribbonDismissable ? 'Users can close it' : 'Always shown'"></span>
-                                    <button type="button" @click="ribbonDismissable = !ribbonDismissable"
-                                            :class="ribbonDismissable ? 'bg-indigo-600' : 'bg-gray-200'"
-                                            :aria-pressed="ribbonDismissable" aria-label="Users can close the ribbon"
-                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
-                                        <span :class="ribbonDismissable ? 'translate-x-5' : 'translate-x-0'"
-                                              class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-                                    </button>
+                                <label class="text-sm font-medium text-gray-700" id="ribbon-behavior-label">Behavior</label>
+                                <div class="flex items-center gap-4 h-[38px]" role="radiogroup" aria-labelledby="ribbon-behavior-label">
+                                    <label class="flex items-center gap-1.5 cursor-pointer">
+                                        <input type="radio" name="ribbon_behavior" value="fixed" :checked="!ribbonDismissable"
+                                               @change="ribbonDismissable = false"
+                                               class="w-3.5 h-3.5 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="text-sm text-gray-700">Fixed</span>
+                                    </label>
+                                    <label class="flex items-center gap-1.5 cursor-pointer">
+                                        <input type="radio" name="ribbon_behavior" value="dismissable" :checked="ribbonDismissable"
+                                               @change="ribbonDismissable = true"
+                                               class="w-3.5 h-3.5 text-indigo-600 focus:ring-indigo-500">
+                                        <span class="text-sm text-gray-700">Dismissable</span>
+                                    </label>
                                 </div>
+                                <p class="text-xs text-gray-400" x-text="ribbonDismissable ? 'Users can close it' : 'Always shown'"></p>
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-4">

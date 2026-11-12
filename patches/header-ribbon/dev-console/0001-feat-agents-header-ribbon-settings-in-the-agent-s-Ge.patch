@@ -1,4 +1,4 @@
-From 4d0b9fa8ae1f475babbcc69b4217ca55cf3b54c4 Mon Sep 17 00:00:00 2001
+From 79562c9a54c700b6d42aba589366e04d3023a11f Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Thu, 12 Nov 2026 17:52:26 +0000
 Subject: [PATCH] feat(agents): header ribbon settings in the agent's General
@@ -19,10 +19,10 @@ Claude-Session: https://claude.ai/code/session_01ARKEhk1KiGHfWe6vuE6FJL
 ---
  agents/schemas/theme.py      |  13 +++
  agents/services/ribbon.py    |  62 ++++++++++++++
- agents/test_ribbon.py        | 143 ++++++++++++++++++++++++++++++++
+ agents/test_ribbon.py        | 143 +++++++++++++++++++++++++++++++
  agents/views/agent.py        |  13 +++
- templates/agents/detail.html | 156 +++++++++++++++++++++++++++++++++++
- 5 files changed, 387 insertions(+)
+ templates/agents/detail.html | 161 +++++++++++++++++++++++++++++++++++
+ 5 files changed, 392 insertions(+)
  create mode 100644 agents/services/ribbon.py
  create mode 100644 agents/test_ribbon.py
 
@@ -303,7 +303,7 @@ index 889f2cb..954ccfc 100644
          if clear_flag:
              theme.pop(theme_key, None)
 diff --git a/templates/agents/detail.html b/templates/agents/detail.html
-index 76fb762..4311305 100644
+index 76fb762..83ed67a 100644
 --- a/templates/agents/detail.html
 +++ b/templates/agents/detail.html
 @@ -60,6 +60,12 @@
@@ -359,7 +359,7 @@ index 76fb762..4311305 100644
      titleImgPreview: window._agentThemeInit.titleImgPreview,
      backgroundImgPreview: window._agentThemeInit.backgroundImgPreview,
      assistantIconPreview: window._agentThemeInit.assistantIconPreview,
-@@ -1789,6 +1828,123 @@
+@@ -1789,6 +1828,128 @@
                      <input type="hidden" name="theme_header_tinted" :value="headerTinted ? '1' : ''">
                  </div>
  
@@ -423,17 +423,22 @@ index 76fb762..4311305 100644
 +                                </div>
 +                            </div>
 +                            <div class="flex flex-col gap-1.5">
-+                                <label class="text-sm font-medium text-gray-700">Behavior</label>
-+                                <div class="flex items-center justify-between gap-3 h-[38px]">
-+                                    <span class="text-xs text-gray-600" x-text="ribbonDismissable ? 'Users can close it' : 'Always shown'"></span>
-+                                    <button type="button" @click="ribbonDismissable = !ribbonDismissable"
-+                                            :class="ribbonDismissable ? 'bg-indigo-600' : 'bg-gray-200'"
-+                                            :aria-pressed="ribbonDismissable" aria-label="Users can close the ribbon"
-+                                            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1">
-+                                        <span :class="ribbonDismissable ? 'translate-x-5' : 'translate-x-0'"
-+                                              class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"></span>
-+                                    </button>
++                                <label class="text-sm font-medium text-gray-700" id="ribbon-behavior-label">Behavior</label>
++                                <div class="flex items-center gap-4 h-[38px]" role="radiogroup" aria-labelledby="ribbon-behavior-label">
++                                    <label class="flex items-center gap-1.5 cursor-pointer">
++                                        <input type="radio" name="ribbon_behavior" value="fixed" :checked="!ribbonDismissable"
++                                               @change="ribbonDismissable = false"
++                                               class="w-3.5 h-3.5 text-indigo-600 focus:ring-indigo-500">
++                                        <span class="text-sm text-gray-700">Fixed</span>
++                                    </label>
++                                    <label class="flex items-center gap-1.5 cursor-pointer">
++                                        <input type="radio" name="ribbon_behavior" value="dismissable" :checked="ribbonDismissable"
++                                               @change="ribbonDismissable = true"
++                                               class="w-3.5 h-3.5 text-indigo-600 focus:ring-indigo-500">
++                                        <span class="text-sm text-gray-700">Dismissable</span>
++                                    </label>
 +                                </div>
++                                <p class="text-xs text-gray-400" x-text="ribbonDismissable ? 'Users can close it' : 'Always shown'"></p>
 +                            </div>
 +                        </div>
 +                        <div class="grid grid-cols-2 gap-4">

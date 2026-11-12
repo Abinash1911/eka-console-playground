@@ -6,7 +6,7 @@ A one-line message under the widget header (offer, privacy note, anything short)
 | Setting | Console field | Widget (`theme.ribbon`) | API shape (`theme.ribbon` in agent theme JSON) |
 |---|---|---|---|
 | Message | text (empty turns it off) | `text` | `text` |
-| Fixed or dismissable | toggle "Users can close it" | `dismissable` (default fixed) | `dismissable` |
+| Fixed or dismissable | "Behavior": choose one of Fixed or Dismissable | `dismissable` (default fixed) | `dismissable` |
 | Icon | None, Gift, Info, Megaphone, Sparkles, Shield, or **Upload your own** (file or https URL) | `icon`, or `iconUrl` (https image, wins over `icon`) | `icon`, or `icon_img` (the uploaded image's URL) |
 | Background colour | colour picker (empty: accent colour) | `background` (hex) | `background` |
 | Text colour | colour picker (empty: black or white, whichever reads better) | `textColor` (hex) | `text_color` |
