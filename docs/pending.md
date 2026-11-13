@@ -2,12 +2,13 @@
 
 Open work, newest decisions first. Move an item to `docs/build-log.md` when done.
 
-## Widget header ribbon (P0, tomorrow 2026-11-13)
-- [ ] **P0: get the dev-console PR up.** Branch `feat/ribbon-settings` is ready locally (rebased on main `862976e`, 15 tests pass), but the push got HTTP 403. Needs an org admin to install the Claude GitHub App on `eka-care/dev-console` (https://github.com/apps/claude/installations/select_target) or GitHub reconnected. Then push and open the PR with the text in `patches/header-ribbon/PR-DESCRIPTIONS.md`. Reviewer: ask who owns dev-console agents (`dotdotcare`, `moon_garg` touched them last); Geethanjali is not on that repo's recent history.
-- [ ] P0: chase review on the widget PR https://github.com/eka-care/synapse-sdk/pull/218 (reviewer `geethanjaliiii`; confirm the login is right).
-- [ ] Open the Eka Console Prototype artifact and check the ribbon block and live ribbon (edits were not opened in a browser).
-- [ ] Welcome card patch (`patches/welcome-card/`) is built but not raised: decide whether and when.
-- [ ] Open questions for developers: claims 26 to 28 in `docs/claims-to-confirm.md` (matrix passes `theme` through, shared "dismissed" store, upload URL is https in production only). The ₹20 reward (counting messages, paying out) needs a backend; nothing built.
+## Header banner (was "ribbon") (P0)
+- [ ] **P0: get the dev-console PR up.** Branch `feat/ribbon-settings` (one commit, "Banner text in the agent's General tab", rebased on main `862976e`, 5 tests pass) is ready locally, but the push got HTTP 403. Either an org admin installs the Claude GitHub App on `eka-care/dev-console` (https://github.com/apps/claude/installations/select_target), or someone with access applies `patches/header-banner/dev-console/*.patch` and pushes. PR text: `patches/header-banner/PR-DESCRIPTIONS.md`. Ask who reviews dev-console agents (`dotdotcare`, `moon_garg` touched them last).
+- [ ] P0: re-request review on synapse-sdk PR https://github.com/eka-care/synapse-sdk/pull/218 (simplified to `theme.banner` per Geethanjali's review; her "changes requested" is still on record until she re-reviews). I did not reply on GitHub.
+- [ ] Open the Eka Console Prototype artifact and check the Banner box and the live banner (edits were not opened in a browser). Old unused ribbon helper code is still inside the artifact (harmless, unused).
+- [ ] Welcome card patch (`patches/welcome-card/`) is built, not raised: decide whether and when. It applies together with the banner patches (`--3way`).
+- [ ] Product follow-ups that Geethanjali's review dropped on purpose: dismissable, icon (upload), colours. If wanted again, they need a backend-friendly design first.
+- [ ] Open questions for developers: claims 26 and 27 in `docs/claims-to-confirm.md`. The reward (counting messages, paying out) needs a backend; nothing built.
 
 ## Voice agent (inbound phone)
 - [ ] **Text-the-clinic fallback:** when nobody answers a handover, the agent takes name, number and reason, and sends them to the clinic by text/WhatsApp. Needs a sending route (check what doot/matrix can send first). Not started.
